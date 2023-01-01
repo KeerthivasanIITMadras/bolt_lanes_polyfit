@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(polyfit)
+option(CATKIN_ENABLE_TESTING false)
+set(CMAKE_BUILD_TYPE Debug)
+add_compile_options(-std=c++17)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
 # add_compile_options(-std=c++11)
@@ -13,7 +16,22 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   cv_bridge
   sensor_msgs
+  geometry_msgs
+  tf2_ros
+  image_geometry
+  image_transport
 )
+
+catkin_package()
+
+find_package(OpenCV 4 REQUIRED)
+find_package(Eigen3 3.3 REQUIRED NO_MODULE)
+
+include_directories(SYSTEM ${EIGEN3_INCLUDE_DIRS})
+include_directories(include ${Boost_INCLUDE_DIRS} ${catkin_INCLUDE_DIRS})
+
+add_executable(topview src/topview.cpp)
+target_link_libraries(topview ${catkin_LIBRARIES})
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)

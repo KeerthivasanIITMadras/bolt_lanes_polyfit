@@ -5,6 +5,7 @@ from cv_bridge import CvBridge, CvBridgeError
 import cv2
 import numpy as np
 from sklearn.cluster import DBSCAN
+from sklearn.metrics import r2_score
 
 # Instantiate CvBridge
 bridge = CvBridge()
@@ -17,10 +18,21 @@ def poly_value(xy):
     global blank_img
     polynomial = np.polyfit(xy[:, 0], xy[:, 1], 2)
     a, b, c = polynomial
+    predict = []
     # print(f"{a}\t{b}\t{c}")
     for element in xy[:, 0]:
-        blank_img = cv2.circle(blank_img, tuple(
-            [int(a*element*element+b*element+c), int(element)]), 5, (255, 0, 255), 1)
+        predict.append(int(a*element*element+b*element+c))
+
+    r2score = r2_score(xy[:, 1], predict)
+
+    if r2score > 0:
+        for element in xy[:, 0]:
+            blank_img = cv2.circle(blank_img, tuple(
+                [int(a*element*element+b*element+c), int(element)]), 2, (255, 0, 255), 1)
+    # else:
+    #    print(f"the r2_score is too low {r2score}")
+
+    #print(f"R2 score is {r2_score(xy[:,1],predict)}")
 
 
 def image_callback(msg):
@@ -45,7 +57,9 @@ def image_callback(msg):
     indexes_points = np.array(indexes_points)
 
     X = indexes_points
-    db = DBSCAN(eps=25, min_samples=40, algorithm='auto').fit(X)
+    if X.size == 0:
+        return
+    db = DBSCAN(eps=15, min_samples=30, algorithm='auto').fit(X)
     core_samples_mask = np.zeros_like(db.labels_, dtype=bool)
     core_samples_mask[db.core_sample_indices_] = True
     labels = db.labels_
@@ -53,6 +67,7 @@ def image_callback(msg):
     # n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)  ,this can be used when we need to see how many clusters
 
     unique_labels = set(labels)
+    # print(len(unique_labels))
     colors = [(0, 255, 255), (255, 0, 0), (0, 255, 0), (0, 0, 255)]
     # print(colors)
     for k, col in zip(unique_labels, colors):
@@ -65,7 +80,7 @@ def image_callback(msg):
         for element in xy:
             blank_img = cv2.circle(blank_img, tuple(
                 [element[1], element[0]]), 0, col, -1)
-        poly_value(xy)
+            poly_value(xy)
     pub.publish(bridge.cv2_to_imgmsg(blank_img, "passthrough"))
     #time2 = rospy.Time.now()
     #print(f"{(time1 - msg.header.stamp).to_sec():.2f}\t{(time2-time1).to_sec():.2f}")

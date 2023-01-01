@@ -58,7 +58,10 @@
   <exec_depend>roscpp</exec_depend>
   <exec_depend>rospy</exec_depend>
   <exec_depend>std_msgs</exec_depend>
-
+  <depend>cv_bridge</depend>
+  <depend>sensor_msgs</depend>
+  <depend>image_geometry</depend>
+  <depend>tf2</depend>
 
   <!-- The export tag contains other, unspecified, tags -->
   <export>
