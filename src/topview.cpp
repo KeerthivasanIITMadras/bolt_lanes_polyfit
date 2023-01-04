@@ -59,7 +59,7 @@ std::string frame_id_depth = "zed2i_left_camera_optical_frame";
 void imagecallback(const sensor_msgs::ImageConstPtr &msg)
 {
     auto time = ros::Time::now();
-    ROS_INFO("Message is received");
+    // ROS_INFO("Message is received");
     const auto &camera_info_ptr = ros::topic::waitForMessage<sensor_msgs::CameraInfo>(
         "/zed2i/zed_node/rgb/camera_info");
 
@@ -157,6 +157,7 @@ void imagecallback(const sensor_msgs::ImageConstPtr &msg)
                 continue;
 
             const auto [x_g, y_g, z_g] = project_subpixel_to_ground(x + 0.5, y + 0.5);
+            //this is the world coordinates ROS_WARN("%f %f %f", x_g, y_g, z_g);
             // Convert from base_footprint to image frame
             const auto [bi, bj] = worldToImgNoBounds(x_g, y_g);
             if (imgCheckBounds(birdseye, bi, bj))
@@ -168,7 +169,7 @@ void imagecallback(const sensor_msgs::ImageConstPtr &msg)
     header.stamp = ros::Time::now();
     sensor_msgs::ImagePtr msg_pub = cv_bridge::CvImage(header, "mono8", birdseye).toImageMsg();
     image_pub.publish(msg_pub);
-    ROS_ERROR("%lf", double((header.stamp - time).toSec()));
+    // ROS_ERROR("%lf", double((header.stamp - time).toSec()));
 }
 /**
 void depth_callback(const sensor_msgs::ImageConstPtr &msg)

@@ -13,22 +13,27 @@ pub = rospy.Publisher("dbscan", Image, queue_size=2)
 
 blank_img = []
 
+x_offset = -2.0
+y_offset = 10.0
+scale = 15
+
 
 def poly_value(xy):
     global blank_img
-    polynomial = np.polyfit(xy[:, 0], xy[:, 1], 2)
-    a, b, c = polynomial
+    x_g = xy[:, 0]/scale - x_offset
+    y_g = xy[:, 1]/scale - y_offset
+    polynomial = np.polyfit(x_g, y_g, 2)
+    a, b, c = polynomial    # Here the abc parameters are in world coordinates
     predict = []
     # print(f"{a}\t{b}\t{c}")
-    for element in xy[:, 0]:
+    for element in x_g:
         predict.append(int(a*element*element+b*element+c))
 
-    r2score = r2_score(xy[:, 1], predict)
-
+    r2score = r2_score(y_g, predict)
     if r2score > 0:
-        for element in xy[:, 0]:
+        for element in x_g:
             blank_img = cv2.circle(blank_img, tuple(
-                [int(a*element*element+b*element+c), int(element)]), 2, (255, 0, 255), 1)
+                [int((a*element*element+b*element+c+y_offset)*scale), int((element+x_offset)*scale)]), 2, (255, 0, 255), 1)
     # else:
     #    print(f"the r2_score is too low {r2score}")
 
@@ -39,7 +44,7 @@ def image_callback(msg):
     #time1 = rospy.Time.now()
     # print(f"{(msg.header.stamp-time1).to_sec():.2f}")
     # print(msg.header.stamp - time1)
-    print("Image received")
+    #print("Image received")
     global blank_img
     try:
         # Convert your ROS Image message to OpenCV2
@@ -59,7 +64,7 @@ def image_callback(msg):
     X = indexes_points
     if X.size == 0:
         return
-    db = DBSCAN(eps=15, min_samples=30, algorithm='auto').fit(X)
+    db = DBSCAN(eps=20, min_samples=45, algorithm='auto').fit(X)
     core_samples_mask = np.zeros_like(db.labels_, dtype=bool)
     core_samples_mask[db.core_sample_indices_] = True
     labels = db.labels_
@@ -80,7 +85,7 @@ def image_callback(msg):
         for element in xy:
             blank_img = cv2.circle(blank_img, tuple(
                 [element[1], element[0]]), 0, col, -1)
-            poly_value(xy)
+        poly_value(xy)
     pub.publish(bridge.cv2_to_imgmsg(blank_img, "passthrough"))
     #time2 = rospy.Time.now()
     #print(f"{(time1 - msg.header.stamp).to_sec():.2f}\t{(time2-time1).to_sec():.2f}")
