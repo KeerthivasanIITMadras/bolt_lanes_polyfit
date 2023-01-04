@@ -58,6 +58,7 @@ std::string frame_id_depth = "zed2i_left_camera_optical_frame";
 
 void imagecallback(const sensor_msgs::ImageConstPtr &msg)
 {
+    auto time = ros::Time::now();
     ROS_INFO("Message is received");
     const auto &camera_info_ptr = ros::topic::waitForMessage<sensor_msgs::CameraInfo>(
         "/zed2i/zed_node/rgb/camera_info");
@@ -167,6 +168,7 @@ void imagecallback(const sensor_msgs::ImageConstPtr &msg)
     header.stamp = ros::Time::now();
     sensor_msgs::ImagePtr msg_pub = cv_bridge::CvImage(header, "mono8", birdseye).toImageMsg();
     image_pub.publish(msg_pub);
+    ROS_ERROR("%lf", double((header.stamp - time).toSec()));
 }
 /**
 void depth_callback(const sensor_msgs::ImageConstPtr &msg)
@@ -178,9 +180,9 @@ int main(int argc, char **argv)
     ros::init(argc, argv, "topview");
     ros::NodeHandle nh;
     image_transport::ImageTransport it(nh);
-    image_transport::Subscriber image_sub = it.subscribe("lanes", 1, imagecallback);
+    image_transport::Subscriber image_sub = it.subscribe("lanes", 3, imagecallback);
     // image_transport::Subscriber depth_sub = it.subscribe("/zed2i/zed_node/depth/depth_registered", 1, depth_callback);
-    image_pub = it.advertise("top_view", 1);
+    image_pub = it.advertise("top_view", 3);
     tf2_ros::TransformListener tf_listener(tf_buffer);
     if (!tf_buffer.canTransform(ground_frame, frame_id_depth.c_str(), ros::Time(0), ros::Duration(10)))
     {
