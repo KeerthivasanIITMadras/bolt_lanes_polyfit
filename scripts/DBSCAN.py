@@ -6,53 +6,77 @@ import cv2
 import numpy as np
 from sklearn.cluster import DBSCAN
 from sklearn.metrics import r2_score
+from visualization_msgs.msg import MarkerArray
+from visualization_msgs.msg import Marker
+from geometry_msgs.msg import Point
+
 
 # Instantiate CvBridge
 bridge = CvBridge()
-pub = rospy.Publisher("dbscan", Image, queue_size=2)
 
-blank_img = []
+pub = rospy.Publisher("/poly_viz", Marker, queue_size=100)
+
 
 x_offset = -2.0
 y_offset = 10.0
 scale = 15
 
+coeff = []
 
-def poly_value(xy):
-    global blank_img
+
+def poly_value(coeff, value):
+    return coeff[0]*value*value+coeff[1]*value+coeff[2]
+
+
+def poly_viz(coeff):
+    global pub
+    line_strip = Marker()
+    line_strip.header.frame_id = "odom"
+    line_strip.header.stamp = rospy.Time.now()  # 0 for add
+    line_strip.pose.orientation.w = 1
+    line_strip.type = 4  # 4 for line strip
+    line_strip.scale.x = 0.1
+    line_strip.color.b = 1.0
+    line_strip.color.a = 1.0
+    range = 4
+    resolution = 0.1
+    i = 0
+    print(len(coeff))
+    for abc in coeff:
+        line_strip.id = i
+        x = -range
+        while x <= range:
+            point = Point()
+            point.x = x
+            point.y = poly_value(abc, x)
+            point.z = 0
+            line_strip.points.append(point)
+            x = x+resolution
+        i = i+1
+        pub.publish(line_strip)
+        line_strip.points.clear()
+    
+    
+
+
+def poly_find(xy):
+    global coeff
     x_g = xy[:, 0]/scale - x_offset
     y_g = xy[:, 1]/scale - y_offset
     polynomial = np.polyfit(x_g, y_g, 2)
-    a, b, c = polynomial    # Here the abc parameters are in world coordinates
-    predict = []
-    # print(f"{a}\t{b}\t{c}")
-    for element in x_g:
-        predict.append(int(a*element*element+b*element+c))
 
-    r2score = r2_score(y_g, predict)
-    if r2score > 0:
-        for element in x_g:
-            blank_img = cv2.circle(blank_img, tuple(
-                [int((a*element*element+b*element+c+y_offset)*scale), int((element+x_offset)*scale)]), 2, (255, 0, 255), 1)
-    # else:
-    #    print(f"the r2_score is too low {r2score}")
-
-    #print(f"R2 score is {r2_score(xy[:,1],predict)}")
+    # Here the abc parameters are in world coordinates
+    coeff.append(polynomial)  # polynomial is a,b,c
 
 
 def image_callback(msg):
-    #time1 = rospy.Time.now()
-    # print(f"{(msg.header.stamp-time1).to_sec():.2f}")
-    # print(msg.header.stamp - time1)
-    #print("Image received")
-    global blank_img
+    global pub
+    global coeff
     try:
         # Convert your ROS Image message to OpenCV2
         img = bridge.imgmsg_to_cv2(msg, "mono8")
     except CvBridgeError as e:
         print(e)
-    blank_img = np.zeros(
-        (img.shape[0], img.shape[1], 3), dtype=np.uint8)
 
     indexes_points = []
     for index, element in np.ndenumerate(img):
@@ -64,17 +88,14 @@ def image_callback(msg):
     X = indexes_points
     if X.size == 0:
         return
-    db = DBSCAN(eps=20, min_samples=45, algorithm='auto').fit(X)
+    db = DBSCAN(eps=15, min_samples=30, algorithm='auto').fit(X)
     core_samples_mask = np.zeros_like(db.labels_, dtype=bool)
     core_samples_mask[db.core_sample_indices_] = True
     labels = db.labels_
-    # print(len(set(labels)))
-    # n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)  ,this can be used when we need to see how many clusters
 
     unique_labels = set(labels)
-    # print(len(unique_labels))
+
     colors = [(0, 255, 255), (255, 0, 0), (0, 255, 0), (0, 0, 255)]
-    # print(colors)
     for k, col in zip(unique_labels, colors):
         if k == -1:
             col = (0, 0, 0)
@@ -82,13 +103,10 @@ def image_callback(msg):
         xy_core = X[class_member_mask & core_samples_mask]
         xy_non_core = X[class_member_mask & ~core_samples_mask]
         xy = np.concatenate([xy_core, xy_non_core])
-        for element in xy:
-            blank_img = cv2.circle(blank_img, tuple(
-                [element[1], element[0]]), 0, col, -1)
-        poly_value(xy)
-    pub.publish(bridge.cv2_to_imgmsg(blank_img, "passthrough"))
-    #time2 = rospy.Time.now()
-    #print(f"{(time1 - msg.header.stamp).to_sec():.2f}\t{(time2-time1).to_sec():.2f}")
+        poly_find(xy)
+
+    poly_viz(coeff)
+    coeff = []
 
 
 def main():
