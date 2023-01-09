@@ -24,6 +24,8 @@ scale = 15
 coeff = []
 
 
+
+
 def poly_value(coeff, value):
     return coeff[0]*value*value+coeff[1]*value+coeff[2]
 
@@ -31,7 +33,7 @@ def poly_value(coeff, value):
 def poly_viz(coeff):
     global pub
     line_strip = Marker()
-    line_strip.header.frame_id = "odom"
+    line_strip.header.frame_id = "zed2i_base_link"
     line_strip.header.stamp = rospy.Time.now()  # 0 for add
     line_strip.pose.orientation.w = 1
     line_strip.type = 4  # 4 for line strip
@@ -44,6 +46,7 @@ def poly_viz(coeff):
     print(len(coeff))
     for abc in coeff:
         line_strip.id = i
+        line_strip.lifetime = rospy.Duration(0.2)
         x = -range
         while x <= range:
             point = Point()
@@ -55,8 +58,6 @@ def poly_viz(coeff):
         i = i+1
         pub.publish(line_strip)
         line_strip.points.clear()
-    
-    
 
 
 def poly_find(xy):
