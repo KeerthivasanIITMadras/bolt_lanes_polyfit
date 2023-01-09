@@ -82,7 +82,7 @@ void imagecallback(const sensor_msgs::ImageConstPtr &msg)
     }
     Mat img_rec = cv_ptr->image;
     const int rows = img_rec.rows, cols = img_rec.cols;
-    const auto rows_to_keep = static_cast<int>(0.6 * rows);
+    const auto rows_to_keep = static_cast<int>(0.6 * rows); //this cropping value is really good ,ignores the sky spaces
     // ROS_WARN("Is this even executed2?");
     //  auto rows_to_keep = rows;
     cv::Mat img{img_rec, cv::Rect{0, rows - rows_to_keep, cols, rows_to_keep}};
