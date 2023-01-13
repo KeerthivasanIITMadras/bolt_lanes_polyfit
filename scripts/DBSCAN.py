@@ -24,8 +24,6 @@ scale = 15
 coeff = []
 
 
-
-
 def poly_value(coeff, value):
     return coeff[0]*value*value+coeff[1]*value+coeff[2]
 
@@ -33,7 +31,7 @@ def poly_value(coeff, value):
 def poly_viz(coeff):
     global pub
     line_strip = Marker()
-    line_strip.header.frame_id = "zed2i_base_link"
+    line_strip.header.frame_id = "map"
     line_strip.header.stamp = rospy.Time.now()  # 0 for add
     line_strip.pose.orientation.w = 1
     line_strip.type = 4  # 4 for line strip
@@ -65,9 +63,12 @@ def poly_find(xy):
     x_g = xy[:, 0]/scale - x_offset
     y_g = xy[:, 1]/scale - y_offset
     polynomial = np.polyfit(x_g, y_g, 2)
-
-    # Here the abc parameters are in world coordinates
-    coeff.append(polynomial)  # polynomial is a,b,c
+    t = 1.6
+    if polynomial[2] > -t and polynomial[2] < t:
+        # Here the abc parameters are in world coordinates4
+      # polynomial is a,b,c
+        print(polynomial)
+        coeff.append(polynomial)
 
 
 def image_callback(msg):
