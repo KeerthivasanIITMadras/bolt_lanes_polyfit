@@ -20,8 +20,15 @@ find_package(catkin REQUIRED COMPONENTS
   tf2_ros
   image_geometry
   image_transport
+  dynamic_reconfigure
 )
 
+catkin_python_setup()
+
+generate_dynamic_reconfigure_options(
+  cfg/bolt_lanes_params.cfg
+#   cfg/DynReconf2.cfg
+ )
 catkin_package()
 
 find_package(OpenCV 4 REQUIRED)
@@ -32,6 +39,8 @@ include_directories(include ${Boost_INCLUDE_DIRS} ${catkin_INCLUDE_DIRS})
 
 add_executable(topview src/topview.cpp)
 target_link_libraries(topview ${catkin_LIBRARIES})
+
+
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -108,10 +117,7 @@ target_link_libraries(topview ${catkin_LIBRARIES})
 ##     and list every .cfg file to be processed
 
 ## Generate dynamic reconfigure parameters in the 'cfg' folder
-# generate_dynamic_reconfigure_options(
-#   cfg/DynReconf1.cfg
-#   cfg/DynReconf2.cfg
-# )
+
 
 ###################################
 ## catkin specific configuration ##
@@ -224,6 +230,12 @@ include_directories(
 
 ## Add folders to be run by python nosetests
 # catkin_add_nosetests(test)
+
+install(
+  PROGRAMS src/polyfit/DBSCAN.py
+  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+  )
+  install(DIRECTORY config DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
 catkin_install_python(PROGRAMS scripts/DBSCAN.py 
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )

@@ -10,6 +10,8 @@ from visualization_msgs.msg import MarkerArray
 from visualization_msgs.msg import Marker
 from geometry_msgs.msg import Point
 
+from dynamic_reconfigure.server import Server
+from polyfit.cfg import bolt_lanes_params.cfg
 
 # Instantiate CvBridge
 bridge = CvBridge()
@@ -23,6 +25,9 @@ scale = 15
 
 coeff = []
 
+def dyn_callback(config,level):
+    print(config.eps_radius)
+    return config
 
 def poly_value(coeff, value):
     return coeff[0]*value*value+coeff[1]*value+coeff[2]
@@ -115,6 +120,8 @@ def main():
     rospy.init_node('DBSCAN')
     # Define your image topic
     image_topic = "top_view"
+    reconfigure_server = Server(bolt_lanes_paramsConfig, callback=dyn_callback)
+    rospy.loginfo("Initialising dynamic reconfiguration...")
     # Set up your subscriber and define its callback
     rospy.Subscriber(image_topic, Image, image_callback)
     # Spin until ctrl + c
