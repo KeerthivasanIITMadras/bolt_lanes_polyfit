@@ -30,7 +30,10 @@ def poly_value(xy):
         predict.append(int(a*element*element+b*element+c))
 
     r2score = r2_score(y_g, predict)
-    if r2score > 0:
+    t = 0.1
+    if c<-t and c>t:
+        return
+    if r2score < 0 or r2score>0.8:
         for element in x_g:
             blank_img = cv2.circle(blank_img, tuple(
                 [int((a*element*element+b*element+c+y_offset)*scale), int((element+x_offset)*scale)]), 2, (255, 0, 255), 1)
@@ -64,7 +67,7 @@ def image_callback(msg):
     X = indexes_points
     if X.size == 0:
         return
-    db = DBSCAN(eps=20, min_samples=45, algorithm='auto').fit(X)
+    db = DBSCAN(eps=9, min_samples=40, algorithm='auto').fit(X)
     core_samples_mask = np.zeros_like(db.labels_, dtype=bool)
     core_samples_mask[db.core_sample_indices_] = True
     labels = db.labels_

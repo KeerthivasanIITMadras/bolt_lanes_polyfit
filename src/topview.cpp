@@ -82,7 +82,7 @@ void imagecallback(const sensor_msgs::ImageConstPtr &msg)
     }
     Mat img_rec = cv_ptr->image;
     const int rows = img_rec.rows, cols = img_rec.cols;
-    const auto rows_to_keep = static_cast<int>(0.6 * rows); //this cropping value is really good ,ignores the sky spaces
+    const auto rows_to_keep = static_cast<int>(0.6 * rows); // this cropping value is really good ,ignores the sky spaces
     // ROS_WARN("Is this even executed2?");
     //  auto rows_to_keep = rows;
     cv::Mat img{img_rec, cv::Rect{0, rows - rows_to_keep, cols, rows_to_keep}};
@@ -157,17 +157,23 @@ void imagecallback(const sensor_msgs::ImageConstPtr &msg)
                 continue;
 
             const auto [x_g, y_g, z_g] = project_subpixel_to_ground(x + 0.5, y + 0.5);
-            //this is the world coordinates ROS_WARN("%f %f %f", x_g, y_g, z_g);
-            // Convert from base_footprint to image frame
+            // this is the world coordinates ROS_WARN("%f %f %f", x_g, y_g, z_g);
+            //  Convert from base_footprint to image frame
             const auto [bi, bj] = worldToImgNoBounds(x_g, y_g);
             if (imgCheckBounds(birdseye, bi, bj))
                 birdseye.at<uint8_t>(bi, bj) = 255;
         }
     }
+    cv::rotate(birdseye, birdseye, ROTATE_180);
+    const int rows_birdseye = birdseye.rows;
+    const int cols_birdseye = birdseye.cols;
+    const int rowstokeep = static_cast<int>(0.5 * rows_birdseye);
+    cv::Mat top{birdseye, cv::Rect{0, rows_birdseye - rowstokeep, cols_birdseye, rowstokeep}};
+
     std_msgs::Header header;
     header.frame_id = "Top_view";
     header.stamp = ros::Time::now();
-    sensor_msgs::ImagePtr msg_pub = cv_bridge::CvImage(header, "mono8", birdseye).toImageMsg();
+    sensor_msgs::ImagePtr msg_pub = cv_bridge::CvImage(header, "mono8", top).toImageMsg();
     image_pub.publish(msg_pub);
     // ROS_ERROR("%lf", double((header.stamp - time).toSec()));
 }
