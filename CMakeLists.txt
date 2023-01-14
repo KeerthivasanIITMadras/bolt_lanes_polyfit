@@ -23,12 +23,12 @@ find_package(catkin REQUIRED COMPONENTS
   dynamic_reconfigure
 )
 
-catkin_python_setup()
+#catkin_python_setup()
 
-generate_dynamic_reconfigure_options(
-  cfg/bolt_lanes_params.cfg
-#   cfg/DynReconf2.cfg
- )
+##generate_dynamic_reconfigure_options(
+# # cfg/bolt_lanes_params.cfg
+###   cfg/DynReconf2.cfg
+# )
 catkin_package()
 
 find_package(OpenCV 4 REQUIRED)
@@ -231,11 +231,11 @@ include_directories(
 ## Add folders to be run by python nosetests
 # catkin_add_nosetests(test)
 
-install(
-  PROGRAMS src/polyfit/DBSCAN.py
-  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-  )
-  install(DIRECTORY config DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
-catkin_install_python(PROGRAMS scripts/DBSCAN.py 
-  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-)
+#install(
+#  PROGRAMS src/polyfit/DBSCAN.py
+#  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+#  )
+#  install(DIRECTORY config DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
+#catkin_install_python(PROGRAMS scripts/DBSCAN.py 
+#  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+#)
