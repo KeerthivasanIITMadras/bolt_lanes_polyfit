@@ -167,7 +167,7 @@ void imagecallback(const sensor_msgs::ImageConstPtr &msg)
     cv::rotate(birdseye, birdseye, ROTATE_180);
     const int rows_birdseye = birdseye.rows;
     const int cols_birdseye = birdseye.cols;
-    const int rowstokeep = static_cast<int>(0.5 * rows_birdseye);
+    const int rowstokeep = static_cast<int>(0.6 * rows_birdseye);
     cv::Mat top{birdseye, cv::Rect{0, rows_birdseye - rowstokeep, cols_birdseye, rowstokeep}};
 
     std_msgs::Header header;

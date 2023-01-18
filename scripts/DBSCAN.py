@@ -95,6 +95,7 @@ def image_callback(msg):
     except CvBridgeError as e:
         print(e)
 
+    cv2.imshow("Region of interest", img)
     indexes_points = []
     for index, element in np.ndenumerate(img):
         if element != 0:
@@ -122,13 +123,13 @@ def image_callback(msg):
         xy_non_core = X[class_member_mask & ~core_samples_mask]
         xy = np.concatenate([xy_core, xy_non_core])
         pub_group_weight.publish(len(xy))
-        if len(xy) > 25:
+        if len(xy) > 75:
             for i in xy:
                 cv2.circle(blank_img, tuple([i[1], i[0]]), 0, col, -1)
             poly_find(xy)
     pub_cluster.publish(bridge.cv2_to_imgmsg(blank_img, "passthrough"))
     #cv2.imshow("Clustering visulaization", blank_img)
-    # cv2.waitKey(8)
+    cv2.waitKey(1)
     poly_viz(coeff)
     coeff = []
 
