@@ -97,8 +97,10 @@ class Memory:
         distance_moved_y = self.odom.twist.twist.linear.y*delta_time
         self.memory = memory/self.scale - \
             np.array([self.x_offset, self.y_offset])
-        self.memory = self.memory[self.memory[:, 0] >=
-                                  distance_moved_x and self.memory[:, 1] >= distance_moved_y]
+        self.memory = self.memory[(self.memory[:, 0] >=
+                                  distance_moved_x) and (self.memory[:, 1] >= distance_moved_y)]
+        self.memory = self.memory - \
+            np.array([distance_moved_x, distance_moved_y])
 
     def points_taken(self, xy):
         points = np.array([])
