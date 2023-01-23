@@ -18,9 +18,36 @@ pub_cluster = rospy.Publisher('/dbscan', Image, queue_size=1)
 
 coeff = []
 
-memory_coordinates = []
+memory = np.array([])
 
-time1 = 0
+vx = 0
+vy = 0
+
+
+time_prev = 0
+
+
+def velocity_callback(msg):
+    global vx, vy
+    vx = msg.twist.twist.linear.x
+    vy = msg.twist.twist.linear.x
+    print("working")
+
+
+def memory_filtering(xy):
+    global time_prev
+    time_now = rospy.get_rostime().secs
+    delta_t = time_now - time_prev
+    distance_x = vx*delta_t
+    distance_y = vy*delta_t
+    new_xy = []
+    for i in xy:
+        if i[0] > distance_x and i[1] > distance_y:
+            new_xy.append(i)
+    if len(new_xy):
+        new_xy = np.array(new_xy) - np.array([distance_x, distance_y])
+        return new_xy
+    return np.array([])
 
 
 class Polynomial:
@@ -61,61 +88,32 @@ class Polynomial:
             self.pub.publish(line_strip)
             line_strip.points.clear()
 
-    def poly_find(self, xy, flag):
+    def poly_find(self, xy):
         global coeff
-        x_g = []
-        y_g = []
-        if not flag:
-            x_g = xy[:, 0]/self.scale - self.x_offset
-            y_g = xy[:, 1]/self.scale - self.y_offset
-        else:
-            x_g = xy[:, 0]
-            y_g = xy[:, 1]
-        polynomial = np.polyfit(x_g, y_g, 2)
+        xy_g = self.img_to_world(xy)
+        polynomial = np.polyfit(xy_g[:, 0], xy_g[:, 1], 2)
         if polynomial[1] < 5 and polynomial[1] > -5:
             if polynomial[0] < 2 and polynomial[0] > -2:
                 coeff.append(polynomial)
 
+    def img_to_world(self, xy):
+        if len(xy) > 0:
+            return xy/self.scale - np.array([self.x_offset, self.y_offset])
+        return np.array([])
 
-class Memory:
-    def __init__(self):
-        velocity_topic = "/zed2i/zed_node/odom"
-        rospy.Subscriber(velocity_topic, Odometry, self.velocity_callback)
-        self.odom = Odometry()
-        self.x_offset = -2.0
-        self.y_offset = 10.0
-        self.scale = 15
-
-    def velocity_callback(self, odom):
-        self.odom.twist.twist.linear.x = odom.twist.twist.linear.x
-        self.odom.twist.twist.linear.y = odom.twist.twist.linear.y
-
-    def update(self, memory, time_prev):
-        time_now = rospy.get_rostime().secs
-        delta_time = time_now - time_prev
-        distance_moved_x = self.odom.twist.twist.linear.x*delta_time
-        distance_moved_y = self.odom.twist.twist.linear.y*delta_time
-        self.memory = memory/self.scale - \
-            np.array([self.x_offset, self.y_offset])
-        self.memory = self.memory[(self.memory[:, 0] >=
-                                  distance_moved_x) and (self.memory[:, 1] >= distance_moved_y)]
-        self.memory = self.memory - \
-            np.array([distance_moved_x, distance_moved_y])
-
-    def points_taken(self, xy):
-        points = np.array([])
-        for i in self.memory:
-            for j in xy:
-                if abs(i[0, 0]-j[0, 0]) < 0.1 and abs(i[0, 1]-j[0, 1]):
-                    points = np.concatenate(points, i)
-        return points, True
+    def world_to_img(self, xy):
+        #print(type((xy+np.array([self.x_offset, self.y_offset]))*self.scale))
+        if len(xy) > 0:
+            return (xy+np.array([self.x_offset, self.y_offset]))*self.scale
+        return np.array([])
 
 
 def image_callback(msg):
     global coeff
     global pub_cluster
-    global memory_coordinates
-    global time1
+    global time_prev
+    global memory
+    polynomial_object = Polynomial()
 
     try:
         img = bridge.imgmsg_to_cv2(msg, "mono8")
@@ -124,13 +122,20 @@ def image_callback(msg):
 
     blank_img = np.zeros((img.shape[0], img.shape[1], 3), np.uint8)
 
+    if len(memory) > 0:
+        memory = polynomial_object.world_to_img(memory_filtering(memory))
     indexes_points = []
     for index, element in np.ndenumerate(img):
-        if element != 0:
-            indexes_points.append([index[0], index[1]])
+        if element > 128:
+            indexes_points.append(tuple([index[0], index[1]]))
+    for i in memory:
+        indexes_points.append(tuple(i))
+    indexes_points = list(set(tuple(indexes_points)))
     indexes_points = np.array(indexes_points)
     if indexes_points.size == 0:
         return
+
+    memory = np.array([])
 
     db = DBSCAN(eps=7, min_samples=25, algorithm='auto').fit(indexes_points)
     core_samples_mask = np.zeros_like(db.labels_, dtype=bool)
@@ -138,11 +143,7 @@ def image_callback(msg):
     labels = db.labels_
     unique_labels = set(labels)
 
-    polynomial_object = Polynomial()
-    memory_object = Memory()
-
-    colors = [(0, 255, 255), (255, 0, 0), (0, 255, 0), (0, 0, 255)]
-
+    colors = [(0, 255, 255), (255, 0, 0), (0, 255, 0), (0, 0, 255)] # what about no of lanes more than 4 
     for k, col in zip(unique_labels, colors):
         if k == -1:
             col = (0, 0, 0)
@@ -152,18 +153,16 @@ def image_callback(msg):
         xy = np.concatenate([xy_core, xy_non_core])
         if len(xy) > 75:
             for i in xy:
-                cv2.circle(blank_img, tuple([i[1], i[0]]), 0, col, -1)
-            if memory_coordinates == []:
-                memory_coordinates = xy
-                polynomial_object.poly_find(xy, False)
-                time1 = rospy.get_rostime().secs
-            else:
-                memory_object.update(memory_coordinates, time1)
-                memory_coordinates = xy
-                xy, flag = memory_object.points_taken(xy)
-                time1 = rospy.get_rostime().secs
-            polynomial_object.poly_find(xy, flag)
+                cv2.circle(blank_img, tuple(
+                    [int(i[1]), int(i[0])]), 0, col, -1)
+            polynomial_object.poly_find(xy)
 
+        xy_g = polynomial_object.img_to_world(xy)
+        if memory.size == 0:
+            memory = xy_g
+        else:
+            memory = np.concatenate((memory, xy_g))
+    time_prev = rospy.get_rostime().secs
     pub_cluster.publish(bridge.cv2_to_imgmsg(blank_img, "passthrough"))
     polynomial_object.poly_viz(coeff)
     coeff = []
@@ -171,9 +170,11 @@ def image_callback(msg):
 
 def main():
     image_topic = "top_view"
+    velocity_topic = "/zed2i/zed_node/odom"
 
     rospy.init_node('DBSCAN')
     rospy.Subscriber(image_topic, Image, image_callback)
+    rospy.Subscriber(velocity_topic, Odometry, velocity_callback)
     rospy.spin()
 
 
