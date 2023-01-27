@@ -8,6 +8,7 @@ from sklearn.cluster import DBSCAN
 from visualization_msgs.msg import Marker
 from geometry_msgs.msg import Point
 from nav_msgs.msg import Odometry
+import tf2_ros
 
 
 # Instantiate CvBridge
@@ -20,34 +21,69 @@ coeff = []
 
 memory = np.array([])
 
-vx = 0
-vy = 0
+tf_buffer = 0
+tf_listener = 0
 
+time_prev = rospy.Time(0)
 
-time_prev = 0
+transform_stamped_1 = 0
 
+frame_id_1 = "odom"
+frame_id_2 = "map"
 
+g =Odometry()
 def velocity_callback(msg):
-    global vx, vy
+    global vx, vy, wz
     vx = msg.twist.twist.linear.x
-    vy = msg.twist.twist.linear.x
-    print("working")
+    vy = msg.twist.twist.linear.y
+    wz = msg.twist.twist.angular.z
+    #print(f"{vx}  {vy}  {wz}")
+    print(msg.twist.twist.linear.x)
 
 
 def memory_filtering(xy):
     global time_prev
-    time_now = rospy.get_rostime().secs
-    delta_t = time_now - time_prev
+    global transform_stamped_1
+    global frame_id_1
+    global frame_id_2
+    #global tf_buffer
+    #global tf_listener
+    tf_buffer = tf2_ros.Buffer()
+    tf_listener = tf2_ros.TransformListener(tf_buffer)
+    '''delta_t = time_now - time_prev
     distance_x = vx*delta_t
     distance_y = vy*delta_t
+    theta = wz*delta_t
+    rotation_matrix = [[math.cos(theta), math.sin(theta)], [
+        math.sin(-theta), math.cos(theta)]]
     new_xy = []
     for i in xy:
         if i[0] > distance_x and i[1] > distance_y:
+            i = i*rotation_matrix
             new_xy.append(i)
     if len(new_xy):
         new_xy = np.array(new_xy) - np.array([distance_x, distance_y])
         return new_xy
-    return np.array([])
+    return np.array([])'''
+
+    #time_stamp_1 = rospy.Time(time_prev)
+    time_stamp_2 = rospy.Time(0)
+
+    try:
+        transform_stamped_2 = tf_buffer.lookup_transform(
+            frame_id_1, frame_id_1, time_stamp_2)
+    except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+        rospy.logerr("Error trying to get transform between time stamps")
+
+    if transform_stamped_1 != 0:
+        trans = transform_stamped_1.transform.translation
+        rot = transform_stamped_1.transform.rotation
+        # print(trans)
+    trans2 = transform_stamped_2.transform.translation
+    rot2 = transform_stamped_2.transform.rotation
+
+    # print(rot2)
+    return np.array(())
 
 
 class Polynomial:
@@ -63,7 +99,7 @@ class Polynomial:
 
     def poly_viz(self, coeff):
         line_strip = Marker()
-        line_strip.header.frame_id = "map"
+        line_strip.header.frame_id = "base_link"
         line_strip.header.stamp = rospy.Time.now()  # 0 for add
         line_strip.pose.orientation.w = 1
         line_strip.type = 4  # 4 for line strip
@@ -113,7 +149,13 @@ def image_callback(msg):
     global pub_cluster
     global time_prev
     global memory
+    global frame_id_1
+    global frame_id_2
+    global transform_stamped_1
+
     polynomial_object = Polynomial()
+    tf_buffer = tf2_ros.Buffer()
+    tf_listener = tf2_ros.TransformListener(tf_buffer)
 
     try:
         img = bridge.imgmsg_to_cv2(msg, "mono8")
@@ -143,7 +185,8 @@ def image_callback(msg):
     labels = db.labels_
     unique_labels = set(labels)
 
-    colors = [(0, 255, 255), (255, 0, 0), (0, 255, 0), (0, 0, 255)] # what about no of lanes more than 4 
+    # what about no of lanes more than 4
+    colors = [(0, 255, 255), (255, 0, 0), (0, 255, 0), (0, 0, 255)]
     for k, col in zip(unique_labels, colors):
         if k == -1:
             col = (0, 0, 0)
@@ -162,7 +205,16 @@ def image_callback(msg):
             memory = xy_g
         else:
             memory = np.concatenate((memory, xy_g))
-    time_prev = rospy.get_rostime().secs
+    time_prev = rospy.Time(0)
+
+    try:
+        transform_stamped_1 = tf_buffer.lookup_transform(
+            frame_id_2, frame_id_1, time_prev)
+    except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+        rospy.logerr("Error trying to get transform between time stamps")
+        print("Is this working")
+
+    # print(time_prev)
     pub_cluster.publish(bridge.cv2_to_imgmsg(blank_img, "passthrough"))
     polynomial_object.poly_viz(coeff)
     coeff = []
