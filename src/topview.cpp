@@ -164,16 +164,16 @@ void imagecallback(const sensor_msgs::ImageConstPtr &msg)
                 birdseye.at<uint8_t>(bi, bj) = 255;
         }
     }
-    cv::rotate(birdseye, birdseye, ROTATE_180);
+    /*cv::rotate(birdseye, birdseye, ROTATE_180);
     const int rows_birdseye = birdseye.rows;
     const int cols_birdseye = birdseye.cols;
     const int rowstokeep = static_cast<int>(0.6 * rows_birdseye);
-    cv::Mat top{birdseye, cv::Rect{0, rows_birdseye - rowstokeep, cols_birdseye, rowstokeep}};
+    cv::Mat top{birdseye, cv::Rect{0, rows_birdseye - rowstokeep, cols_birdseye, rowstokeep}};*/
 
     std_msgs::Header header;
     header.frame_id = "Top_view";
     header.stamp = ros::Time::now();
-    sensor_msgs::ImagePtr msg_pub = cv_bridge::CvImage(header, "mono8", top).toImageMsg();
+    sensor_msgs::ImagePtr msg_pub = cv_bridge::CvImage(header, "mono8", birdseye).toImageMsg();
     image_pub.publish(msg_pub);
     // ROS_ERROR("%lf", double((header.stamp - time).toSec()));
 }

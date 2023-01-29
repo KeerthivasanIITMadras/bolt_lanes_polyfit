@@ -21,6 +21,7 @@ find_package(catkin REQUIRED COMPONENTS
   image_geometry
   image_transport
   dynamic_reconfigure
+  message_generation
 )
 
 #catkin_python_setup()
@@ -29,7 +30,17 @@ find_package(catkin REQUIRED COMPONENTS
 # # cfg/bolt_lanes_params.cfg
 ###   cfg/DynReconf2.cfg
 # )
-catkin_package()
+catkin_python_setup()
+
+add_message_files(
+  FILES
+  abc_coeff.msg
+)
+generate_messages(
+  DEPENDENCIES
+  std_msgs
+)
+catkin_package(CATKIN_DEPENDS message_runtime)
 
 find_package(OpenCV 4 REQUIRED)
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
@@ -76,11 +87,7 @@ target_link_libraries(topview ${catkin_LIBRARIES})
 ##   * add every package in MSG_DEP_SET to generate_messages(DEPENDENCIES ...)
 
 ## Generate messages in the 'msg' folder
-# add_message_files(
-#   FILES
-#   Message1.msg
-#   Message2.msg
-# )
+
 
 ## Generate services in the 'srv' folder
 # add_service_files(
@@ -97,10 +104,7 @@ target_link_libraries(topview ${catkin_LIBRARIES})
 # )
 
 ## Generate added messages and services with any dependencies listed here
-# generate_messages(
-#   DEPENDENCIES
-#   std_msgs
-# )
+
 
 ################################################
 ## Declare ROS dynamic reconfigure parameters ##
@@ -232,10 +236,10 @@ include_directories(
 # catkin_add_nosetests(test)
 
 #install(
-#  PROGRAMS src/polyfit/DBSCAN.py
+#  PROGRAMS scripts/DBSCAN.py
 #  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 #  )
-#  install(DIRECTORY config DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
+  #install(DIRECTORY config DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
 #catkin_install_python(PROGRAMS scripts/DBSCAN.py 
 #  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 #)

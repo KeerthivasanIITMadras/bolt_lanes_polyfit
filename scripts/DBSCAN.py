@@ -1,4 +1,6 @@
 #! /usr/bin/python
+
+from polyfit.msg import abc_coeff
 import rospy
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge, CvBridgeError
@@ -6,9 +8,8 @@ import cv2
 import numpy as np
 from sklearn.cluster import DBSCAN
 from visualization_msgs.msg import Marker
+from geometry_msgs.msg import PoseStamped
 from geometry_msgs.msg import Point
-from nav_msgs.msg import Odometry
-import tf2_ros
 
 
 # Instantiate CvBridge
@@ -17,73 +18,43 @@ bridge = CvBridge()
 
 pub_cluster = rospy.Publisher('/dbscan', Image, queue_size=1)
 
+
 coeff = []
 
 memory = np.array([])
 
-tf_buffer = 0
-tf_listener = 0
 
-time_prev = rospy.Time(0)
+x = 0
+y = 0
+z = 0
 
-transform_stamped_1 = 0
+prev_position = [0, 0, 0]
 
-frame_id_1 = "odom"
-frame_id_2 = "map"
 
-g =Odometry()
-def velocity_callback(msg):
-    global vx, vy, wz
-    vx = msg.twist.twist.linear.x
-    vy = msg.twist.twist.linear.y
-    wz = msg.twist.twist.angular.z
-    #print(f"{vx}  {vy}  {wz}")
-    print(msg.twist.twist.linear.x)
+def position_callback(msg):
+    global x, y, z
+    x = msg.pose.position.x
+    y = msg.pose.position.y
+    z = msg.pose.position.z
+
+
+def find_position():
+    return [x, y, z]
 
 
 def memory_filtering(xy):
-    global time_prev
-    global transform_stamped_1
-    global frame_id_1
-    global frame_id_2
-    #global tf_buffer
-    #global tf_listener
-    tf_buffer = tf2_ros.Buffer()
-    tf_listener = tf2_ros.TransformListener(tf_buffer)
-    '''delta_t = time_now - time_prev
-    distance_x = vx*delta_t
-    distance_y = vy*delta_t
-    theta = wz*delta_t
-    rotation_matrix = [[math.cos(theta), math.sin(theta)], [
-        math.sin(-theta), math.cos(theta)]]
+    global prev_position
+    new_position = find_position()
+    distance_x = abs(new_position[0]-prev_position[0])
+    distance_y = new_position[1]-prev_position[1]
     new_xy = []
     for i in xy:
-        if i[0] > distance_x and i[1] > distance_y:
-            i = i*rotation_matrix
+        if i[0] > distance_x and i[1]-distance_y < 4 and i[1]-distance_y > -4:
             new_xy.append(i)
-    if len(new_xy):
+    if len(new_xy) > 0:
         new_xy = np.array(new_xy) - np.array([distance_x, distance_y])
         return new_xy
-    return np.array([])'''
-
-    #time_stamp_1 = rospy.Time(time_prev)
-    time_stamp_2 = rospy.Time(0)
-
-    try:
-        transform_stamped_2 = tf_buffer.lookup_transform(
-            frame_id_1, frame_id_1, time_stamp_2)
-    except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
-        rospy.logerr("Error trying to get transform between time stamps")
-
-    if transform_stamped_1 != 0:
-        trans = transform_stamped_1.transform.translation
-        rot = transform_stamped_1.transform.rotation
-        # print(trans)
-    trans2 = transform_stamped_2.transform.translation
-    rot2 = transform_stamped_2.transform.rotation
-
-    # print(rot2)
-    return np.array(())
+    return np.array([])
 
 
 class Polynomial:
@@ -93,6 +64,7 @@ class Polynomial:
         self.y_offset = 10.0
         self.scale = 15
         self.pub = rospy.Publisher("/poly_viz", Marker, queue_size=100)
+        self.pub_poly = rospy.Publisher("/poly", abc_coeff, queue_size=10)
 
     def poly_value(self, coeff, value):
         return coeff[0]*value*value+coeff[1]*value+coeff[2]
@@ -123,6 +95,14 @@ class Polynomial:
             i = i+1
             self.pub.publish(line_strip)
             line_strip.points.clear()
+        if len(coeff) != 0:
+            message = abc_coeff()
+            coeff = np.array(coeff)
+            message.a = coeff[:, 0].tolist()
+            message.b = coeff[:, 1].tolist()
+            message.c = coeff[:, 2].tolist()
+            self.pub_poly.publish(message)
+            coeff = coeff.tolist()
 
     def poly_find(self, xy):
         global coeff
@@ -138,7 +118,6 @@ class Polynomial:
         return np.array([])
 
     def world_to_img(self, xy):
-        #print(type((xy+np.array([self.x_offset, self.y_offset]))*self.scale))
         if len(xy) > 0:
             return (xy+np.array([self.x_offset, self.y_offset]))*self.scale
         return np.array([])
@@ -147,15 +126,11 @@ class Polynomial:
 def image_callback(msg):
     global coeff
     global pub_cluster
-    global time_prev
     global memory
-    global frame_id_1
-    global frame_id_2
-    global transform_stamped_1
+    global prev_position
+    global pub_poly
 
     polynomial_object = Polynomial()
-    tf_buffer = tf2_ros.Buffer()
-    tf_listener = tf2_ros.TransformListener(tf_buffer)
 
     try:
         img = bridge.imgmsg_to_cv2(msg, "mono8")
@@ -166,20 +141,42 @@ def image_callback(msg):
 
     if len(memory) > 0:
         memory = polynomial_object.world_to_img(memory_filtering(memory))
+
     indexes_points = []
     for index, element in np.ndenumerate(img):
         if element > 128:
             indexes_points.append(tuple([index[0], index[1]]))
-    for i in memory:
-        indexes_points.append(tuple(i))
-    indexes_points = list(set(tuple(indexes_points)))
-    indexes_points = np.array(indexes_points)
-    if indexes_points.size == 0:
+
+    if len(indexes_points) == 0:
+        memory = []
         return
+
+    # indices to delete which fall within a specific radius
+
+    indices_to_delete = []
+    radius = 4
+    k = []
+    if len(memory) > 0:
+        for i, coord1 in enumerate(indexes_points):
+            for coord2 in memory:
+                dist = np.sqrt((coord1[0]-coord2[0]) **
+                               2 + (coord1[1]-coord2[1])**2)
+                k.append(dist)
+                if dist < radius:
+                    indices_to_delete.append(coord1)
+                    break
+        indices_to_delete = np.array(indices_to_delete)
+
+        for i in memory:
+            result = ~np.isin(i, indices_to_delete)
+            if result.all():
+                indexes_points.append(tuple([int(i[0]), int(i[1])]))
+
+    indexes_points = np.array(indexes_points)
 
     memory = np.array([])
 
-    db = DBSCAN(eps=7, min_samples=25, algorithm='auto').fit(indexes_points)
+    db = DBSCAN(eps=6, min_samples=25, algorithm='auto').fit(indexes_points)
     core_samples_mask = np.zeros_like(db.labels_, dtype=bool)
     core_samples_mask[db.core_sample_indices_] = True
     labels = db.labels_
@@ -205,28 +202,22 @@ def image_callback(msg):
             memory = xy_g
         else:
             memory = np.concatenate((memory, xy_g))
-    time_prev = rospy.Time(0)
+    prev_position = find_position()
 
-    try:
-        transform_stamped_1 = tf_buffer.lookup_transform(
-            frame_id_2, frame_id_1, time_prev)
-    except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
-        rospy.logerr("Error trying to get transform between time stamps")
-        print("Is this working")
-
-    # print(time_prev)
     pub_cluster.publish(bridge.cv2_to_imgmsg(blank_img, "passthrough"))
     polynomial_object.poly_viz(coeff)
     coeff = []
 
 
 def main():
+    global coeff
     image_topic = "top_view"
-    velocity_topic = "/zed2i/zed_node/odom"
+    pose_topic = "/zed2i/zed_node/pose"
 
     rospy.init_node('DBSCAN')
     rospy.Subscriber(image_topic, Image, image_callback)
-    rospy.Subscriber(velocity_topic, Odometry, velocity_callback)
+    rospy.Subscriber(pose_topic, PoseStamped, position_callback)
+
     rospy.spin()
 
 
