@@ -17,9 +17,11 @@ bridge = CvBridge()
 
 
 pub_cluster = rospy.Publisher('/dbscan', Image, queue_size=1)
+pub_cluster_memory = rospy.Publisher('/memory_publisher', Image, queue_size=1)
 
 
 coeff = []
+memory_coeff = []
 
 memory = np.array([])
 
@@ -59,24 +61,35 @@ def memory_filtering(xy):
 
 class Polynomial:
 
-    def __init__(self):
+    def __init__(self, color_coeff):
         self.x_offset = -2.0
         self.y_offset = 10.0
         self.scale = 15
         self.pub = rospy.Publisher("/poly_viz", Marker, queue_size=100)
+        self.pub_mem = rospy.Publisher("/poly_viz_mem", Marker, queue_size=1)
         self.pub_poly = rospy.Publisher("/poly", abc_coeff, queue_size=10)
+        self.color_coeff = color_coeff
 
     def poly_value(self, coeff, value):
         return coeff[0]*value*value+coeff[1]*value+coeff[2]
 
-    def poly_viz(self, coeff):
+    def poly_viz(self):
+        global coeff
+        global memory_coeff
         line_strip = Marker()
         line_strip.header.frame_id = "base_link"
         line_strip.header.stamp = rospy.Time.now()  # 0 for add
         line_strip.pose.orientation.w = 1
         line_strip.type = 4  # 4 for line strip
         line_strip.scale.x = 0.1
-        line_strip.color.b = 1.0
+        if self.color_coeff == 1:
+            line_strip.color.b = 1.0
+            t = coeff
+            pub = self.pub
+        else:
+            line_strip.color.g = 1.0
+            t = memory_coeff
+            pub = self.pub_mem
         line_strip.color.a = 1.0
         range = 5
         resolution = 0.1
@@ -92,8 +105,8 @@ class Polynomial:
                 point.z = 0
                 line_strip.points.append(point)
                 x = x+resolution
-            i = i+1
-            self.pub.publish(line_strip)
+                i = i+1
+            pub.publish(line_strip)
             line_strip.points.clear()
         if len(coeff) != 0:
             message = abc_coeff()
@@ -105,12 +118,18 @@ class Polynomial:
             coeff = coeff.tolist()
 
     def poly_find(self, xy):
-        global coeff
         xy_g = self.img_to_world(xy)
         polynomial = np.polyfit(xy_g[:, 0], xy_g[:, 1], 2)
-        if polynomial[1] < 5 and polynomial[1] > -5:
-            if polynomial[0] < 2 and polynomial[0] > -2:
-                coeff.append(polynomial)
+        if self.color_coeff == 1:
+            global coeff
+            if polynomial[1] < 5 and polynomial[1] > -5:
+                if polynomial[0] < 2 and polynomial[0] > -2:
+                    coeff.append(polynomial)
+        else:
+            global memory_coeff
+            if polynomial[1] < 5 and polynomial[1] > -5:
+                if polynomial[0] < 2 and polynomial[0] > -2:
+                    memory_coeff.append(polynomial)
 
     def img_to_world(self, xy):
         if len(xy) > 0:
@@ -128,9 +147,11 @@ def image_callback(msg):
     global pub_cluster
     global memory
     global prev_position
-    global pub_poly
+    global pub_cluster_memory
+    global memory_coeff
 
-    polynomial_object = Polynomial()
+    polynomial_object_mem = Polynomial(0)
+    polynomial_object = Polynomial(1)
 
     try:
         img = bridge.imgmsg_to_cv2(msg, "mono8")
@@ -138,52 +159,47 @@ def image_callback(msg):
         print(e)
 
     blank_img = np.zeros((img.shape[0], img.shape[1], 3), np.uint8)
+    blank_img_memory = np.zeros((img.shape[0], img.shape[1], 3), np.uint8)
 
+    colors = [(0, 255, 255), (255, 0, 0), (0, 255, 0), (0, 0, 255)]
     if len(memory) > 0:
-        memory = polynomial_object.world_to_img(memory_filtering(memory))
+        memory = np.round(polynomial_object.world_to_img(
+            memory_filtering(memory))).astype(int)
+        db_memory = DBSCAN(eps=7, min_samples=25, algorithm='auto').fit(memory)
+        core_samples_mask_memory = np.zeros_like(db_memory.labels_, dtype=bool)
+        core_samples_mask_memory[db_memory.core_sample_indices_] = True
+        lables_memory = db_memory.labels_
+        unique_labels_memory = set(lables_memory)
+
+        # for polynomials from memory
+        for k, col in zip(unique_labels_memory, colors):
+            if k == -1:
+                col = (0, 0, 0)
+            class_member_mask = (lables_memory == k)
+            xy_core = memory[class_member_mask & core_samples_mask_memory]
+            xy_non_core = memory[class_member_mask & ~core_samples_mask_memory]
+            xy = np.concatenate([xy_core, xy_non_core])
+            if len(xy) > 75:
+                for i in xy:
+                    cv2.circle(blank_img_memory, tuple(
+                        [int(i[1]), int(i[0])]), 0, col, -1)
+                polynomial_object_mem.poly_find(xy)
 
     indexes_points = []
     for index, element in np.ndenumerate(img):
         if element > 128:
             indexes_points.append(tuple([index[0], index[1]]))
 
-    if len(indexes_points) == 0:
-        memory = []
-        return
-
-    # indices to delete which fall within a specific radius
-
-    indices_to_delete = []
-    radius = 4
-    k = []
-    if len(memory) > 0:
-        for i, coord1 in enumerate(indexes_points):
-            for coord2 in memory:
-                dist = np.sqrt((coord1[0]-coord2[0]) **
-                               2 + (coord1[1]-coord2[1])**2)
-                k.append(dist)
-                if dist < radius:
-                    indices_to_delete.append(coord1)
-                    break
-        indices_to_delete = np.array(indices_to_delete)
-
-        for i in memory:
-            result = ~np.isin(i, indices_to_delete)
-            if result.all():
-                indexes_points.append(tuple([int(i[0]), int(i[1])]))
-
     indexes_points = np.array(indexes_points)
-
-    memory = np.array([])
-
-    db = DBSCAN(eps=6, min_samples=25, algorithm='auto').fit(indexes_points)
+    # This is for the normal indices which we get at the correct time stamp
+    db = DBSCAN(eps=7, min_samples=25, algorithm='auto').fit(indexes_points)
     core_samples_mask = np.zeros_like(db.labels_, dtype=bool)
     core_samples_mask[db.core_sample_indices_] = True
     labels = db.labels_
     unique_labels = set(labels)
 
     # what about no of lanes more than 4
-    colors = [(0, 255, 255), (255, 0, 0), (0, 255, 0), (0, 0, 255)]
+
     for k, col in zip(unique_labels, colors):
         if k == -1:
             col = (0, 0, 0)
@@ -196,28 +212,48 @@ def image_callback(msg):
                 cv2.circle(blank_img, tuple(
                     [int(i[1]), int(i[0])]), 0, col, -1)
             polynomial_object.poly_find(xy)
-
         xy_g = polynomial_object.img_to_world(xy)
         if memory.size == 0:
             memory = xy_g
         else:
             memory = np.concatenate((memory, xy_g))
-    prev_position = find_position()
 
+    prev_position = find_position()
     pub_cluster.publish(bridge.cv2_to_imgmsg(blank_img, "passthrough"))
-    polynomial_object.poly_viz(coeff)
+    pub_cluster_memory.publish(
+        bridge.cv2_to_imgmsg(blank_img_memory, "passthrough"))
+    # if len(coeff) > 0:
+    #    polynomial_object.poly_viz()
+    # print(memory_coeff)
+    # if len(memory_coeff) > 0:
+    #    polynomial_object_mem.poly_viz()
+
+    # combine the coefficients
+    new_coeff = []
+    for abc_mem in memory_coeff:
+        c = 0
+        for abc in coeff:
+            if abs(abc_mem[0]-abc[0]) < 1 and abs(abc_mem[1]-abc[1]) < 1 and abs(abc_mem[2]-abc[2]) < 1:
+                new_coeff.append(abc)
+                c = c+1
+                break
+        if c == 0:
+            new_coeff.append(abc_mem)
+    coeff, new_coeff = new_coeff, coeff
+    if len(coeff) > 0:
+        polynomial_object.poly_viz()
+    new_coeff = []
     coeff = []
+    memory_coeff = []
 
 
 def main():
-    global coeff
     image_topic = "top_view"
     pose_topic = "/zed2i/zed_node/pose"
 
     rospy.init_node('DBSCAN')
     rospy.Subscriber(image_topic, Image, image_callback)
     rospy.Subscriber(pose_topic, PoseStamped, position_callback)
-
     rospy.spin()
 
 
