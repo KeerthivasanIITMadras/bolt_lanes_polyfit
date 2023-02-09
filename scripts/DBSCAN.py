@@ -10,7 +10,8 @@ from sklearn.cluster import DBSCAN
 from visualization_msgs.msg import Marker
 from geometry_msgs.msg import PoseStamped
 from geometry_msgs.msg import Point
-
+import pandas as pd
+import os
 
 # Instantiate CvBridge
 bridge = CvBridge()
@@ -31,6 +32,8 @@ y = 0
 z = 0
 
 prev_position = [0, 0, 0]
+
+df = []
 
 
 def position_callback(msg):
@@ -149,6 +152,7 @@ def image_callback(msg):
     global prev_position
     global pub_cluster_memory
     global memory_coeff
+    global df
 
     polynomial_object_mem = Polynomial(0)
     polynomial_object = Polynomial(1)
@@ -227,6 +231,23 @@ def image_callback(msg):
     # print(memory_coeff)
     # if len(memory_coeff) > 0:
     #    polynomial_object_mem.poly_viz()
+    coeff_numpy = np.array(coeff)
+    # sorting based on last column
+    sort_indices = np.argsort(coeff_numpy[:, -1])
+    sorted_array = coeff_numpy[sort_indices]
+
+    value = 0
+    if len(coeff) == 0:
+        value = (0, 0, 0)
+    else:
+        value = sorted_array[0, :]
+
+    if not os.path.isfile('abc.csv'):
+        df = pd.DataFrame({'a': [value[0]], 'b': value[1], 'c': value[2]})
+    else:
+        df = pd.read_csv('scripts/abc.csv')
+        df = df.append({'a': [value[0]], 'b': [value[1]],
+                       'c': [value[2]]}, ignore_index=True)
 
     # combine the coefficients
     new_coeff = []
@@ -245,6 +266,8 @@ def image_callback(msg):
     new_coeff = []
     coeff = []
     memory_coeff = []
+    if rospy.is_shutdown():
+        df.to_csv('scripts/abc.csv', index=False)
 
 
 def main():
