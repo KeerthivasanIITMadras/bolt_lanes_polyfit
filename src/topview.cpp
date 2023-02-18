@@ -96,7 +96,7 @@ void imagecallback(const sensor_msgs::ImageConstPtr &msg)
     catch (const tf2::TransformException &e)
     {
         // Catches tf2::LookupException and tf2::ConnectivityException
-        // ROS_ERROR_THROTTLE(1.0, "Couldn't get transform from %s to %s", frame_id_depth, ground_frame.c_str());
+        ROS_ERROR_THROTTLE(1.0, "Couldn't get transform from %s to %s", frame_id_depth, ground_frame.c_str());
     }
     // ROS_ERROR("%s", frame_id_depth.c_str());
     Eigen::Transform<double, 3, Eigen::Isometry> transformer = Eigen::Translation3d(transform.transform.translation.x, transform.transform.translation.y,

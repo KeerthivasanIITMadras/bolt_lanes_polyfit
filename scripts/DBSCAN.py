@@ -33,8 +33,6 @@ z = 0
 
 prev_position = [0, 0, 0]
 
-df = []
-
 
 def position_callback(msg):
     global x, y, z
@@ -54,10 +52,11 @@ def memory_filtering(xy):
     distance_y = new_position[1]-prev_position[1]
     new_xy = []
     for i in xy:
-        if i[0] > distance_x and i[1]-distance_y < 4 and i[1]-distance_y > -4:
+        # and i[1]-distance_y < 4 and i[1]-distance_y > -4:
+        if i[0] > distance_x:
             new_xy.append(i)
     if len(new_xy) > 0:
-        new_xy = np.array(new_xy) - np.array([distance_x, distance_y])
+        new_xy = np.array(new_xy) - np.array([distance_x, 0])
         return new_xy
     return np.array([])
 
@@ -152,7 +151,6 @@ def image_callback(msg):
     global prev_position
     global pub_cluster_memory
     global memory_coeff
-    global df
 
     polynomial_object_mem = Polynomial(0)
     polynomial_object = Polynomial(1)
@@ -169,7 +167,7 @@ def image_callback(msg):
     if len(memory) > 0:
         memory = np.round(polynomial_object.world_to_img(
             memory_filtering(memory))).astype(int)
-        db_memory = DBSCAN(eps=7, min_samples=25, algorithm='auto').fit(memory)
+        db_memory = DBSCAN(eps=6, min_samples=25, algorithm='auto').fit(memory)
         core_samples_mask_memory = np.zeros_like(db_memory.labels_, dtype=bool)
         core_samples_mask_memory[db_memory.core_sample_indices_] = True
         lables_memory = db_memory.labels_
@@ -183,12 +181,13 @@ def image_callback(msg):
             xy_core = memory[class_member_mask & core_samples_mask_memory]
             xy_non_core = memory[class_member_mask & ~core_samples_mask_memory]
             xy = np.concatenate([xy_core, xy_non_core])
-            if len(xy) > 75:
+            if len(xy) > 10:
                 for i in xy:
                     cv2.circle(blank_img_memory, tuple(
                         [int(i[1]), int(i[0])]), 0, col, -1)
                 polynomial_object_mem.poly_find(xy)
 
+    # np.findnonzero , np.find(img > 128)
     indexes_points = []
     for index, element in np.ndenumerate(img):
         if element > 128:
@@ -211,7 +210,7 @@ def image_callback(msg):
         xy_core = indexes_points[class_member_mask & core_samples_mask]
         xy_non_core = indexes_points[class_member_mask & ~core_samples_mask]
         xy = np.concatenate([xy_core, xy_non_core])
-        if len(xy) > 75:
+        if len(xy) > 10:
             for i in xy:
                 cv2.circle(blank_img, tuple(
                     [int(i[1]), int(i[0])]), 0, col, -1)
@@ -226,37 +225,15 @@ def image_callback(msg):
     pub_cluster.publish(bridge.cv2_to_imgmsg(blank_img, "passthrough"))
     pub_cluster_memory.publish(
         bridge.cv2_to_imgmsg(blank_img_memory, "passthrough"))
-    # if len(coeff) > 0:
-    #    polynomial_object.poly_viz()
-    # print(memory_coeff)
-    # if len(memory_coeff) > 0:
-    #    polynomial_object_mem.poly_viz()
-    coeff_numpy = np.array(coeff)
-    # sorting based on last column
-    sort_indices = np.argsort(coeff_numpy[:, -1])
-    sorted_array = coeff_numpy[sort_indices]
-
-    value = 0
-    if len(coeff) == 0:
-        value = (0, 0, 0)
-    else:
-        value = sorted_array[0, :]
-
-    if not os.path.isfile('abc.csv'):
-        df = pd.DataFrame({'a': [value[0]], 'b': value[1], 'c': value[2]})
-    else:
-        df = pd.read_csv('scripts/abc.csv')
-        df = df.append({'a': [value[0]], 'b': [value[1]],
-                       'c': [value[2]]}, ignore_index=True)
 
     # combine the coefficients
     new_coeff = []
     for abc_mem in memory_coeff:
         c = 0
         for abc in coeff:
-            if abs(abc_mem[0]-abc[0]) < 1 and abs(abc_mem[1]-abc[1]) < 1 and abs(abc_mem[2]-abc[2]) < 1:
+            if abs(abc_mem[0]-abc[0]) < 0.8 and abs(abc_mem[1]-abc[1]) < 0.8 and abs(abc_mem[2]-abc[2]) < 0.8:
                 new_coeff.append(abc)
-                c = c+1
+                c = c + 1
                 break
         if c == 0:
             new_coeff.append(abc_mem)
@@ -266,8 +243,6 @@ def image_callback(msg):
     new_coeff = []
     coeff = []
     memory_coeff = []
-    if rospy.is_shutdown():
-        df.to_csv('scripts/abc.csv', index=False)
 
 
 def main():
