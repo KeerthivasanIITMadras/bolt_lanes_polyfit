@@ -10,28 +10,33 @@ from sklearn.cluster import DBSCAN
 from visualization_msgs.msg import Marker
 from geometry_msgs.msg import PoseStamped
 from geometry_msgs.msg import Point
-import pandas as pd
-import os
+import tf2_ros
+from tf.transformations import euler_from_quaternion
+from geometry_msgs.msg import TransformStamped
+import math
 
-# Instantiate CvBridge
+
 bridge = CvBridge()
 
+rospy.init_node('DBSCAN')
 
 pub_cluster = rospy.Publisher('/dbscan', Image, queue_size=1)
 pub_cluster_memory = rospy.Publisher('/memory_publisher', Image, queue_size=1)
 
+tfBuffer = tf2_ros.Buffer()
+listener = tf2_ros.TransformListener(tfBuffer)
 
 coeff = []
 memory_coeff = []
 
 memory = np.array([])
 
-
 x = 0
 y = 0
 z = 0
 
 prev_position = [0, 0, 0]
+prev_yaw = 0
 
 
 def position_callback(msg):
@@ -45,18 +50,41 @@ def find_position():
     return [x, y, z]
 
 
+def get_transform():
+    global listener
+    global tfBuffer
+    transform = None
+    while not rospy.is_shutdown() and transform is None:
+        try:
+            transform = tfBuffer.lookup_transform(
+                "base_link", "map", rospy.Time())
+        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+            rospy.logerr("Cant get transforms betweent the given frames")
+            continue
+        break
+    euler = euler_from_quaternion([transform.transform.rotation.x,
+                                   transform.transform.rotation.y,
+                                   transform.transform.rotation.z,
+                                   transform.transform.rotation.w])
+    yaw = euler[2]
+    return yaw
+
+
 def memory_filtering(xy):
     global prev_position
+    global prev_yaw
     new_position = find_position()
+    current_yaw = get_transform()
+    change_yaw = current_yaw-prev_yaw
     distance_x = abs(new_position[0]-prev_position[0])
     distance_y = new_position[1]-prev_position[1]
     new_xy = []
     for i in xy:
-        # and i[1]-distance_y < 4 and i[1]-distance_y > -4:
         if i[0] > distance_x:
-            new_xy.append(i)
+            new_xy.append([i[0]*math.cos(change_yaw)+i[1]*math.sin(change_yaw),
+                          i[1]*math.cos(change_yaw)-i[0]*math.sin(change_yaw)])
     if len(new_xy) > 0:
-        new_xy = np.array(new_xy) - np.array([distance_x, 0])
+        new_xy = np.array(new_xy) - np.array([distance_x, distance_y])
         return new_xy
     return np.array([])
 
@@ -121,7 +149,9 @@ class Polynomial:
 
     def poly_find(self, xy):
         xy_g = self.img_to_world(xy)
-        polynomial = np.polyfit(xy_g[:, 0], xy_g[:, 1], 2)
+        polynomial = list(np.polyfit(xy_g[:, 0], xy_g[:, 1], 2))
+        polynomial.append(xy_g.size)
+        polynomial = np.array(polynomial)
         if self.color_coeff == 1:
             global coeff
             if polynomial[1] < 5 and polynomial[1] > -5:
@@ -151,7 +181,7 @@ def image_callback(msg):
     global prev_position
     global pub_cluster_memory
     global memory_coeff
-
+    global prev_yaw
     polynomial_object_mem = Polynomial(0)
     polynomial_object = Polynomial(1)
 
@@ -167,7 +197,7 @@ def image_callback(msg):
     if len(memory) > 0:
         memory = np.round(polynomial_object.world_to_img(
             memory_filtering(memory))).astype(int)
-        db_memory = DBSCAN(eps=6, min_samples=25, algorithm='auto').fit(memory)
+        db_memory = DBSCAN(eps=7, min_samples=25, algorithm='auto').fit(memory)
         core_samples_mask_memory = np.zeros_like(db_memory.labels_, dtype=bool)
         core_samples_mask_memory[db_memory.core_sample_indices_] = True
         lables_memory = db_memory.labels_
@@ -222,6 +252,7 @@ def image_callback(msg):
             memory = np.concatenate((memory, xy_g))
 
     prev_position = find_position()
+    prev_yaw = get_transform()
     pub_cluster.publish(bridge.cv2_to_imgmsg(blank_img, "passthrough"))
     pub_cluster_memory.publish(
         bridge.cv2_to_imgmsg(blank_img_memory, "passthrough"))
@@ -246,10 +277,11 @@ def image_callback(msg):
 
 
 def main():
+    global tfBuffer
+    global listener
     image_topic = "top_view"
     pose_topic = "/zed2i/zed_node/pose"
 
-    rospy.init_node('DBSCAN')
     rospy.Subscriber(image_topic, Image, image_callback)
     rospy.Subscriber(pose_topic, PoseStamped, position_callback)
     rospy.spin()
