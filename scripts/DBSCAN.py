@@ -12,6 +12,7 @@ from geometry_msgs.msg import PoseStamped
 from geometry_msgs.msg import Point
 import pandas as pd
 import os
+from typing import List
 
 # Instantiate CvBridge
 bridge = CvBridge()
@@ -143,6 +144,24 @@ class Polynomial:
             return (xy+np.array([self.x_offset, self.y_offset]))*self.scale
         return np.array([])
 
+    def r_square(self, poly: List, cluster_pts: np.ndarray):
+        sq_error = 0
+        y_var = np.var(cluster_pts[:,1])
+        
+        for x,y in cluster_pts:
+            sq_error += (self.poly_value(x)-y)**2
+
+        return (1- (sq_error/y_var))
+
+    def find_confidence(self, poly: List, cluster_pts: np.ndarray):
+        if len(poly) != 3:
+            raise ValueError("Polynomial has ", len(poly), " coefficients, expected 3")
+        
+        conf = self.r_square(poly, cluster_pts)
+        return conf
+        
+
+        
 
 def image_callback(msg):
     global coeff
