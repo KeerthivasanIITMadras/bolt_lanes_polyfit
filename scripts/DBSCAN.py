@@ -185,11 +185,18 @@ class Polynomial:
 
         return (1- (sq_error/y_var))
 
-    def find_confidence(self, poly: List, cluster_pts: np.ndarray):
+    def find_confidence(self, poly: List, cluster_pts: np.ndarray, prev_lane: np.ndarray):
+        # prev_lane is the lane poly coeff which is closest to the current lane
         if len(poly) != 3:
             raise ValueError("Polynomial has ", len(poly), " coefficients, expected 3")
         
         conf = self.r_square(poly, cluster_pts)
+
+        # find the intercept difference
+        # check which axis is the intercept of:
+        diff = float(abs(prev_lane[2] - poly[2]))
+        scale = max(0, 1-(diff/2.))
+        conf = conf*scale
         return conf
         
 
