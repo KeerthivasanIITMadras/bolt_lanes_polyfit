@@ -73,7 +73,7 @@ def get_transform():
     return yaw
 
 
-def memory_filtering(xy):
+def memory_filtering(xy: np.ndarray):
     global prev_position
     global prev_yaw
     new_position = find_position()
@@ -150,7 +150,7 @@ class Polynomial:
             self.pub_poly.publish(message)
             coeff = coeff.tolist()
 
-    def poly_find(self, xy):
+    def poly_find(self, xy: np.ndarray):
         xy_g = self.img_to_world(xy)
         polynomial = list(np.polyfit(xy_g[:, 0], xy_g[:, 1], 2))
         polynomial.append(xy_g.size)
@@ -166,7 +166,7 @@ class Polynomial:
                 if polynomial[0] < 2 and polynomial[0] > -2:
                     memory_coeff.append(polynomial)
 
-    def img_to_world(self, xy):
+    def img_to_world(self, xy: np.ndarray):
         if len(xy) > 0:
             return xy/self.scale - np.array([self.x_offset, self.y_offset])
         return np.array([])
@@ -178,22 +178,21 @@ class Polynomial:
 
     def r_square(self, poly: List, cluster_pts: np.ndarray):
         sq_error = 0
-        y_var = np.var(cluster_pts[:,1])
-        
-        for x,y in cluster_pts:
+        y_var = np.var(cluster_pts[:, 1])
+
+        for x, y in cluster_pts:
             sq_error += (self.poly_value(x)-y)**2
 
-        return (1- (sq_error/y_var))
+        return (1 - (sq_error/y_var))
 
     def find_confidence(self, poly: List, cluster_pts: np.ndarray):
         if len(poly) != 3:
-            raise ValueError("Polynomial has ", len(poly), " coefficients, expected 3")
-        
+            raise ValueError("Polynomial has ", len(
+                poly), " coefficients, expected 3")
+
         conf = self.r_square(poly, cluster_pts)
         return conf
-        
 
-        
 
 def image_callback(msg):
     global coeff
