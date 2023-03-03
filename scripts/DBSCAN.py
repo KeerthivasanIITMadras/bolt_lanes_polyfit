@@ -89,7 +89,31 @@ coeff = []
 #        return new_xy
 #    return np.array([])
 
+def lane_number(db,X):
+    core_samples_mask = np.zeros_like(db.labels, dtype=bool)
+    core_samples_mask[db.core_sample_indices] = True
+    unique_labels = set(db.labels)
+    new_lables = {}
 
+    lane_number = len(unique_labels)
+    centroids = np.zeros((len(unique_labels), 2))
+    for k in unique_labels:
+        class_member_mask = (unique_labels == k)
+        xy_core = X[class_member_mask & core_samples_mask]
+        xy_non_core = X[class_member_mask & ~core_samples_mask]
+        xy = np.concatenate([xy_core, xy_non_core])
+        new_lables[k] = xy
+        for element in xy:
+            centroids[k][0] = sum(xy[:, 0])/len(xy)
+            centroids[k][1] = sum(xy[:, 1])/len(xy)
+    for i in range (len(unique_labels)):
+        for j in range(i+1,len(centroids)):
+            distance = np.sqrt((centroids[i][0]-centroids[j][0])**2 + (centroids[i][1]-centroids[j][1])**2)
+            if distance < 1.5:
+                lane_number -= 1
+                new_lables[i] = np.concatenate([new_lables[i], new_lables[j]])
+                del new_lables[j]
+    return new_lables
 class Polynomial:
 
     def __init__(self):
@@ -143,7 +167,15 @@ class Polynomial:
             message.c = coeff[:, 2].tolist()
             self.pub_poly.publish(message)
             coeff = coeff.tolist()
-
+            
+    def sort_lanes(self, new_labels):
+        poly_c= {}
+        for k,xy in enumerate(new_labels):
+            val = self.poly_find(xy)
+            poly_c[k] = val
+        sorted_lanes = sorted(poly_c.items(), key=lambda x:x[1])
+        return sorted_lanes
+    
     def poly_find(self, xy: np.ndarray):
         # todo , make it just for one polynomial lane at time
         xy_g = self.img_to_world(xy)
