@@ -180,13 +180,34 @@ class Lanes:
                     del new_labels[unique_labels[j]]
         
         lane_coeff = [self.left_lane.coeff[2], self.mid_lane.coeff[2], self.right_lane.coeff[2]]
+        # final_3_lanes is a dictionary that will store clusters in each othe lanes
+        final_3_lanes = {}
+        final_3_lanes[0] = [0, 0]
+        final_3_lanes[1] = [0, 0]
+        final_3_lanes[2] = [0, 0]
+
         
         for i in range(len(unique_labels)):
             # find the lane polynomial
             cluster_coeff = self.poly_find(new_labels[i])
-            
-
-        return new_labels
+            # d1, d2, d3 is distance of each clusters polynomial with the left mid and right lane
+            d1 = abs(cluster_coeff[2] - lane_coeff[0])
+            d2 = abs(cluster_coeff[2] - lane_coeff[0])
+            d3 = abs(cluster_coeff[2] - lane_coeff[0])
+            # checking which lane is nearest to the given cluster polynomial and discarding clusters with distance greater than 1.5 metres with all 3 clusters
+            if(min(d1,d2,d3) == d1 and d1<1.5):
+                #appending the clusters to final_3_lanes
+                final_3_lanes[0].concatenate(new_labels[i])
+            elif(min(d1,d2,d3) == d2 and d2<1.5):
+                final_3_lanes[1].concatenate(new_labels[i])
+            elif(min(d1,d2,d3) == d3 and d3<1.5):
+                final_3_lanes[2].concatenate(new_labels[i])
+        #finding polynomials for the new lane
+        new_left_lane = self.poly_find(final_3_lanes[0])
+        new_mid_lane = self.poly_find(final_3_lanes[1])
+        new_right_lane= self.poly_find(final_3_lanes[2])
+        # retuning new left, mid and right lanes
+        return new_left_lane, new_mid_lane, new_right_lane
 
 
 lanes = Lanes()
