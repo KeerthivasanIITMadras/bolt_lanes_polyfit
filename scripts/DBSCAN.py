@@ -75,12 +75,9 @@ class Polynomial:
 
 class Lanes:
     def __init__(self) -> None:
-        self.left_lane = Polynomial('''give the initial a,b,c here''')
-        self.mid_lane = Polynomial('''give the initial a,b,c here''')
-        self.right_lane = Polynomial('''give the initial a,b,c here''')
-        # self.left_lane = left_lane
-        # self.mid_lane = mid_lane
-        # self.right_lane = right_lane
+        self.left_lane = Polynomial([0,0,-1.5])
+        self.mid_lane = Polynomial([0,0,1.5])
+        self.right_lane = Polynomial([0,0,4.5])
         self.dummy_lane = Polynomial([0, 0, 0])
         
     def img_to_world(self, xy: np.ndarray):
@@ -225,9 +222,6 @@ def image_callback(msg):
     indexes_points = np.array(indexes_points)
     # This is for the normal indices which we get at the correct time stamp
     db = DBSCAN(eps=7, min_samples=25, algorithm='auto').fit(indexes_points) # clusters lane points
-    # left_lane_points = lanes.lane_number(db, indexes_points)[0]
-    # mid_lane_points = lanes.lane_number(db, indexes_points)[1]
-    # right_lane_points = lanes.lane_number(db, indexes_points)[2]
     lanes.lane_number(db, indexes_points)
 
     # find the current poly coeff here
