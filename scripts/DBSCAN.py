@@ -17,9 +17,6 @@ rospy.init_node('DBSCAN')
 
 # pub_cluster = rospy.Publisher('/dbscan', Image, queue_size=1)
 
-
-coeff = []
-
 class Polynomial:
     # polyfind, img to world and world to img hv been moved to class Lanes
     def __init__(self, abc):
@@ -111,10 +108,13 @@ class Polynomial:
         return predicted_poly
 
 class Lanes:
-    def __init__(self) -> None:
-        self.left_lane = Polynomial('''give the initial a,b,c here''')
-        self.mid_lane = Polynomial('''give the initial a,b,c here''')
-        self.right_lane = Polynomial('''give the initial a,b,c here''')
+    def __init__(self, left_lane, mid_lane, right_lane) -> None:
+        # self.left_lane = Polynomial('''give the initial a,b,c here''')
+        # self.mid_lane = Polynomial('''give the initial a,b,c here''')
+        # self.right_lane = Polynomial('''give the initial a,b,c here''')
+        self.left_lane = left_lane
+        self.mid_lane = mid_lane
+        self.right_lane = right_lane
         self.dummy_lane = Polynomial([0, 0, 0])
         
     def poly_find(self, xy: np.ndarray):
@@ -179,7 +179,7 @@ class Lanes:
                     del centroids[unique_labels[j]]
                     del new_labels[unique_labels[j]]
         
-        lane_coeff = [self.left_lane.coeff[2], self.mid_lane.coeff[2], self.right_lane.coeff[2]]
+        lane_coeff = [self.left_lane.prev_poly[2], self.mid_lane.prev_poly[2], self.right_lane.prev_poly[2]]
         # final_3_lanes is a dictionary that will store clusters in each othe lanes
         final_3_lanes = {}
         final_3_lanes[0] = [0, 0]
@@ -203,13 +203,43 @@ class Lanes:
             elif(min(d1,d2,d3) == d3 and d3<1.5):
                 final_3_lanes[2].concatenate(new_labels[i])
         #finding polynomials for the new lane
-        new_left_lane = self.poly_find(final_3_lanes[0])
-        new_mid_lane = self.poly_find(final_3_lanes[1])
-        new_right_lane= self.poly_find(final_3_lanes[2])
         # retuning new left, mid and right lanes
-        return new_left_lane, new_mid_lane, new_right_lane
+        return final_3_lanes
 
+    def r_square(self, poly: np.ndarray, cluster_pts: np.ndarray):
+        sq_error = 0
+        y_var = np.var(cluster_pts[:, 1])
 
+        for x, y in cluster_pts:
+            sq_error += (self.poly_value(x)-y)**2
+
+        return (1 - (sq_error/y_var))
+
+    def find_confidence(self, poly: np.ndarray, cluster_pts: np.ndarray, prev_lane: np.ndarray):
+        # prev_lane is the lane poly coeff which is closest to the current lane
+        if len(poly) != 3:
+            raise ValueError("Polynomial has ", len(
+                poly), " coefficients, expected 3")
+
+        conf = self.r_square(poly, cluster_pts)
+
+        # find the intercept difference
+        # check which axis is the intercept of:
+        diff = float(abs(prev_lane[2] - poly[2]))
+        scale = max(0, 1-(diff/2.))
+        conf = conf*scale
+        return conf
+
+    def prediction(self, current_poly: np.ndarray, cluster_pts: np.ndarray):
+        # Here i am writing it under the assumption that each object of polynomial corresponds to one lane
+        current_confidence = self.find_confidence(
+            current_poly, cluster_pts, self.prev_poly)
+        predicted_poly = (current_confidence*current_poly +
+                          self.prev_confidence*self.prev_poly)/(current_confidence+self.prev_confidence)
+        self.prev_confidence = current_confidence*0.9
+        self.prev_poly = current_poly
+        return predicted_poly
+    
 lanes = Lanes()
 
 def image_callback(msg):
@@ -221,10 +251,6 @@ def image_callback(msg):
     except CvBridgeError as e:
         print(e)
 
-    # blank_img = np.zeros((img.shape[0], img.shape[1], 3), np.uint8)
-    # colors = [(0, 255, 255), (255, 0, 0), (0, 255, 0), (0, 0, 255)]
-
-    # np.findnonzero , np.find(img > 128)
     indexes_points = [] # all the lane points
     for index, element in np.ndenumerate(img):
         if element > 128:
@@ -234,25 +260,16 @@ def image_callback(msg):
     indexes_points = np.array(indexes_points)
     # This is for the normal indices which we get at the correct time stamp
     db = DBSCAN(eps=7, min_samples=25, algorithm='auto').fit(indexes_points) # clusters lane points
-    # This will give a dictionary containing unique labels and points(combines clusters too)
-    # this is passed to sort_lanes
-
-    labels = lanes.lane_number(db, indexes_points)
-    final_labels = dummy_lane.sort_lanes()
-    # from all the lanes find the closest 3 lanes to prev lanes
-    # Index out of bounds??
-    abc_left = left_lane.poly_find(final_labels[list(final_labels)[0]])
-    abc_mid = mid_lane.poly_find(final_labels[list(final_labels)[1]])
-    abc_right = right_lane.poly_find(final_labels[list(final_labels)[2]])
-
-    abc_left = left_lane.prediction(
-        abc_left, final_labels[list(final_labels)[0]])
-    abc_mid = mid_lane.prediction(abc_mid, final_labels[list(final_labels)[1]])
-    abc_right = right_lane.prediction(
-        abc_right, final_labels[list(final_labels)[2]])
+    left_lane_points = lanes.lane_number(db, indexes_points)[0]
+    mid_lane_points = lanes.lane_number(db, indexes_points)[1]
+    right_lane_points = lanes.lane_number(db, indexes_points)[2]
+    abc_left = lanes.poly_find(left_lane_points)
+    abc_mid = lanes.poly_find(mid_lane_points)
+    abc_right = lanes.poly_find(right_lane_points)
+    abc_left = lanes.prediction(abc_left, left_lane_points)
+    abc_mid = lanes.prediction(abc_mid, mid_lane_points)
+    abc_right = lanes.prediction(abc_right, right_lane_points)
     coeff = [list(abc_left), list(abc_mid), list(abc_right)]
-    dummy_lane.poly_viz()
-
 
 def main():
     image_topic = "top_view"
