@@ -17,6 +17,7 @@ rospy.init_node('DBSCAN')
 
 # pub_cluster = rospy.Publisher('/dbscan', Image, queue_size=1)
 
+
 class Polynomial:
     # polyfind, img to world and world to img hv been moved to class Lanes
     def __init__(self, abc):
@@ -24,31 +25,34 @@ class Polynomial:
         self.x_offset = -2.0
         self.y_offset = 10.0
         self.scale = 15
-        self.pub = rospy.Publisher("/poly_viz", Marker, queue_size=100)
-        self.pub_poly = rospy.Publisher("/poly", abc_coeff, queue_size=10)
         # here the for previous part initially we will set it to some default polynomial with very low confidence
         self.prev_poly = abc
         self.prev_confidence = 0  # todo give some low confidence
         self.centroid = None
         self.curr_poly = None
-        self.points = None
+        self.points:np.ndarray = np.array([])
 
     def poly_value(self, value):
-        return self.coeff[0]*value*value + self.coeff[1]*value + self.coeff[2]
+        # Here prev_poly corresponds to the estimated polynomial , since we are changing it in the prediction
+        return self.prev_poly[0]*value*value + self.prev_poly[1]*value + self.prev_poly[2] 
+
+    def img_to_world(self, xy: np.ndarray):
+        if len(xy) > 0:
+            return xy/self.scale - np.array([self.x_offset, self.y_offset])
+        return np.array([])
 
     def poly_find(self):
         # todo , make it just for one polynomial lane at time
         xy_g = self.img_to_world(self.points)
         polynomial = list(np.polyfit(xy_g[:, 0], xy_g[:, 1], 2))
         self.curr_poly = np.array(polynomial)
-    
 
     def r_square(self, poly: np.ndarray, cluster_pts: np.ndarray):
         sq_error = 0
         y_var = np.var(cluster_pts[:, 1])
 
         for x, y in cluster_pts:
-            sq_error += (self.poly_value(x)-y)**2
+            sq_error += (poly(x)-y)**2
 
         return (1 - (sq_error/y_var))
 
@@ -70,16 +74,23 @@ class Polynomial:
                           self.prev_confidence*self.prev_poly)/(current_confidence+self.prev_confidence)
         actual_confidence = self.find_confidence(predicted_poly)
         self.prev_confidence = actual_confidence*0.9
-        self.prev_poly = self.curr_poly
+        self.prev_poly = predicted_poly
         return predicted_poly
+
 
 class Lanes:
     def __init__(self) -> None:
-        self.left_lane = Polynomial([0,0,-1.5])
-        self.mid_lane = Polynomial([0,0,1.5])
-        self.right_lane = Polynomial([0,0,4.5])
+        self.left_lane = Polynomial([0, 0, -1.5])
+        self.mid_lane = Polynomial([0, 0, 1.5])
+        self.right_lane = Polynomial([0, 0, 4.5])
         self.dummy_lane = Polynomial([0, 0, 0])
-        
+        self.x_offset = -2.0
+        self.y_offset = 10.0
+        self.scale = 15
+
+        self.pub = rospy.Publisher("/poly_viz", Marker, queue_size=100)
+        self.pub_poly = rospy.Publisher("/poly", abc_coeff, queue_size=10)
+
     def img_to_world(self, xy: np.ndarray):
         if len(xy) > 0:
             return xy/self.scale - np.array([self.x_offset, self.y_offset])
@@ -89,66 +100,78 @@ class Lanes:
         if len(xy) > 0:
             return (xy+np.array([self.x_offset, self.y_offset]))*self.scale
         return np.array([])
-    
+
     def find_lanes(self, db, X: np.ndarray):
         '''
             combine clusters which are close to each other
             compares with prev lanes
         '''
-        core_samples_mask = np.zeros_like(db.labels, dtype=bool)
-        core_samples_mask[db.core_sample_indices] = True # All core points are true, else false
-        unique_labels = set(db.labels) # gets all the labels
+        core_samples_mask = np.zeros_like(db.labels_, dtype=bool)
+        # All core points are true, else false
+        core_samples_mask[db.core_sample_indices_] = True
+        unique_labels = set(db.labels_)  # gets all the labels
+        labels = db.labels_
         # label -1 which is for noisy points
         unique_labels.remove(-1)
         new_labels = {}
-
         # centroids = np.zeros((len(unique_labels), 2))
-        centroids = {} # dict of centroids of all lanes 
+        centroids = {}  # dict of centroids of all lanes
         # find the centroids
         for k in unique_labels:
             if k == -1:
                 continue
-            class_member_mask = (unique_labels == k) # if label is k
-            xy_core = X[class_member_mask & core_samples_mask] # if label is k and it is a core point
-            xy_non_core = X[class_member_mask & ~core_samples_mask] # if label is k and it is not a core point
-            xy = np.concatenate([xy_core, xy_non_core]) # all points of label k
+            class_member_mask = (labels == k)  # if label is k
+            # if label is k and it is a core point
+            xy_core = X[class_member_mask & core_samples_mask]
+            # if label is k and it is not a core point
+            xy_non_core = X[class_member_mask & ~core_samples_mask]
+            # all points of label k
+            xy = np.concatenate([xy_core, xy_non_core])
+            # print(len(xy))
             new_labels[k] = xy
             centroids[k] = [0, 0]
             centroids[k][0] = sum(xy[:, 0])/xy.shape[0]
             centroids[k][1] = sum(xy[:, 1])/xy.shape[0]
 
         # combines the centroids close by
+        unique_labels = list(unique_labels)
         for i in range(len(unique_labels)):
-            if unique_labels[i] not in centroids.keys:
+            if unique_labels[i] not in centroids.keys():
                 continue
             for j in range(i+1, len(unique_labels)):
-                if unique_labels[j] not in centroids.keys:
+                if unique_labels[j] not in centroids.keys():
                     continue
                 distance = np.sqrt(
                     (centroids[unique_labels[i]][0]-centroids[unique_labels[j]][0])**2 + (centroids[unique_labels[j]][1]-centroids[unique_labels[j]][1])**2)
                 if distance < 1:
-                    new_labels[i] = np.concatenate([new_labels[i], new_labels[j]])
+                    new_labels[i] = np.concatenate(
+                        [new_labels[i], new_labels[j]])
                     # update centroids -> i
-                    n1 = len(unique_labels[i]) # no. of points in the ith cluster
-                    n2 = len(unique_labels[j]) # no. of points in the jth cluster        
-                    centroids[unique_labels[i]][0] = (centroids[unique_labels[i]][0]*n1 + centroids[unique_labels[j]][0]*n2)/ (n1+n2)
-                    centroids[unique_labels[i]][1] = (centroids[unique_labels[i]][1]*n1 + centroids[unique_labels[j]][1]*n2)/ (n1+n2)
+                    # no. of points in the ith cluster
+                    n1 = len(unique_labels[i])
+                    # no. of points in the jth cluster
+                    n2 = len(unique_labels[j])
+                    centroids[unique_labels[i]][0] = (
+                        centroids[unique_labels[i]][0]*n1 + centroids[unique_labels[j]][0]*n2) / (n1+n2)
+                    centroids[unique_labels[i]][1] = (
+                        centroids[unique_labels[i]][1]*n1 + centroids[unique_labels[j]][1]*n2) / (n1+n2)
 
                     # delete centroids -> j
                     del centroids[unique_labels[j]]
                     del new_labels[unique_labels[j]]
-        
-        lane_coeff = [self.left_lane.prev_poly[2], self.mid_lane.prev_poly[2], self.right_lane.prev_poly[2]]
+
+        lane_coeff = [self.left_lane.prev_poly[2],
+                      self.mid_lane.prev_poly[2], self.right_lane.prev_poly[2]]
         # final_3_lanes is a dictionary that will store clusters in each of the lanes
         self.left_lane.points = []
         self.mid_lane.points = []
         self.right_lane.points = []
-        
+
         for i in new_labels.keys:
             # find the lane polynomial
             self.dummy_lane.points = new_labels[i]
             self.dummy_lane.poly_find()
-            
+
             # d1, d2, d3 is distance of each clusters polynomial with the left mid and right lane
             d1 = abs(self.dummy_lane.curr_poly[2] - lane_coeff[0])
             d2 = abs(self.dummy_lane.curr_poly[2] - lane_coeff[1])
@@ -156,16 +179,17 @@ class Lanes:
 
             # checking which lane is nearest to the given cluster polynomial and discarding clusters
             # with distance greater than 1.5 metres with all 3 clusters
-            if(min(d1,d2,d3) == d1 and d1 < 1.5):
-                #appending the clusters to final_3_lanes
+            if(min(d1, d2, d3) == d1 and d1 < 1.5):
+                # appending the clusters to final_3_lanes
                 self.left_lane.points.concatenate(new_labels[i])
-            elif(min(d1,d2,d3) == d2 and d2 < 1.5):
+            elif(min(d1, d2, d3) == d2 and d2 < 1.5):
                 self.mid_lane.points.concatenate(new_labels[i])
-            elif(min(d1,d2,d3) == d3 and d3 < 1.5):
+            elif(min(d1, d2, d3) == d3 and d3 < 1.5):
                 self.right_lane.points.concatenate(new_labels[i])
-    
+
     def poly_viz(self):
-        coeff = [self.left_lane.curr_poly, self.mid_lane.curr_poly, self.right_lane.curr_poly]
+        coeff = [self.left_lane.curr_poly,
+                 self.mid_lane.curr_poly, self.right_lane.curr_poly]
         line_strip = Marker()
         line_strip.header.frame_id = "base_link"
         line_strip.header.stamp = rospy.Time.now()  # 0 for add
@@ -185,7 +209,7 @@ class Lanes:
             while x <= range:
                 point = Point()
                 point.x = x
-                point.y = self.poly_value(abc, x)
+                point.y = abc[0]*x**2+abc[1]*x+abc[2]
                 point.z = 0
                 line_strip.points.append(point)
                 x = x+resolution
@@ -202,7 +226,9 @@ class Lanes:
             coeff = coeff.tolist()
     # still need to confirm this part
 
+
 lanes = Lanes()
+
 
 def image_callback(msg):
     global coeff
@@ -213,16 +239,18 @@ def image_callback(msg):
     except CvBridgeError as e:
         print(e)
 
-    indexes_points = [] # all the lane points
+    indexes_points = []  # all the lane points
     for index, element in np.ndenumerate(img):
         if element > 128:
             # check if it is white
-            indexes_points.append(tuple([index[0], index[1]])) # adds image pixel coordinates to the list
+            # adds image pixel coordinates to the list
+            indexes_points.append(tuple([index[0], index[1]]))
 
     indexes_points = np.array(indexes_points)
     # This is for the normal indices which we get at the correct time stamp
-    db = DBSCAN(eps=7, min_samples=25, algorithm='auto').fit(indexes_points) # clusters lane points
-    lanes.lane_number(db, indexes_points)
+    db = DBSCAN(eps=7, min_samples=25, algorithm='auto').fit(
+        indexes_points)  # clusters lane points
+    lanes.find_lanes(db, indexes_points)
 
     # find the current poly coeff here
     lanes.left_lane.poly_find()
@@ -234,9 +262,10 @@ def image_callback(msg):
     abc_right = lanes.right_lane.prediction()
 
     lanes.poly_viz()
-    
+
     # pulish this
     lane_coeff = [list(abc_left), list(abc_mid), list(abc_right)]
+
 
 def main():
     image_topic = "top_view"
