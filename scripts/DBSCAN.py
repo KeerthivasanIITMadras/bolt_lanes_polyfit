@@ -148,9 +148,9 @@ class Lanes:
                         [new_labels[i], new_labels[j]])
                     # update centroids -> i
                     # no. of points in the ith cluster
-                    n1 = len(unique_labels[i])
+                    n1 = len(new_labels[i].shape[0])
                     # no. of points in the jth cluster
-                    n2 = len(unique_labels[j])
+                    n2 = len(new_labels[j].shape[0])
                     centroids[unique_labels[i]][0] = (
                         centroids[unique_labels[i]][0]*n1 + centroids[unique_labels[j]][0]*n2) / (n1+n2)
                     centroids[unique_labels[i]][1] = (
