@@ -4,13 +4,13 @@ from polyfit.msg import abc_coeff
 import rospy
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge, CvBridgeError
-import cv2
+# import cv2
 import numpy as np
 from sklearn.cluster import DBSCAN
 from visualization_msgs.msg import Marker
-from geometry_msgs.msg import PoseStamped
+# from geometry_msgs.msg import PoseStamped
 from geometry_msgs.msg import Point
-
+import math
 bridge = CvBridge()
 
 rospy.init_node('DBSCAN')
@@ -26,17 +26,18 @@ class Polynomial:
         self.y_offset = 10.0
         self.scale = 15
         # here the for previous part initially we will set it to some default polynomial with very low confidence
-        self.prev_poly = abc
-        self.prev_confidence = 0  # todo give some low confidence
+        self.prev_poly = np.array(abc)
+        self.prev_confidence = 0.1  # todo give some low confidence
         self.centroid = None
         self.curr_poly = None
         self.points: None
 
-    def poly_value(self, value):
+    def poly_value(self, poly, value):
         # Here prev_poly corresponds to the estimated polynomial , since we are changing it in the prediction
-        return self.prev_poly[0]*value*value + self.prev_poly[1]*value + self.prev_poly[2]
+        return poly[0]*value*value + poly[1]*value + poly[2]
 
     def img_to_world(self, xy: np.ndarray):
+        xy = np.array(xy)
         if len(xy) > 0:
             return xy/self.scale - np.array([self.x_offset, self.y_offset])
         return np.array([])
@@ -45,28 +46,29 @@ class Polynomial:
         # todo , make it just for one polynomial lane at time
         xy_g = self.img_to_world(self.points)
         if xy_g.shape[0] != 0:
-            self.curr_poly = np.polyfit(xy_g[:, 0], xy_g[:, 1], 2)
+            self.curr_poly = np.polyfit(xy_g[:, 0], xy_g[:, 1], 2).reshape(-1)
         else:
             self.curr_poly = np.array([0, 0, 0])
         # if no points are detected then we keep the current polynomial to be (0,0,0)
 
     def r_square(self, poly: np.array, cluster_pts: list):
         sq_error = 0
-        y_var = np.var(cluster_pts[:, 1])
+        cluster_pt = np.array(cluster_pts)
+        if len(cluster_pts)  != 0:
+            # print(cluster_pts)
+            y_var = np.var(cluster_pt[:, 1])+0.0001
 
-        for x, y in cluster_pts:
-            sq_error += (poly(x)-y)**2
+        for x, y in cluster_pt:
+            sq_error += (self.poly_value(poly, x)-y)**2
 
         return (1 - (sq_error/y_var))
 
-    def find_confidence(self, poly: np.array):
-        # prev_lane is the lane poly coeff which is closest to the current lane
-        print(self.points)
+    def find_confidence(self, poly: np.ndarray):
         conf = self.r_square(poly, self.points)
 
         # find the intercept difference
         # check which axis is the intercept of:
-        diff = float(abs(self.prev_poly[2] - poly[2]))
+        diff = np.float32(abs(self.prev_poly[2] - poly[2]))
         scale = max(0, 1-(diff/2.))
         conf = conf*scale
         return conf
@@ -74,9 +76,14 @@ class Polynomial:
     def prediction(self):
         # Here i am writing it under the assumption that each object of polynomial corresponds to one lane
         current_confidence = self.find_confidence(self.curr_poly)
-        print(current_confidence)
-        predicted_poly = (current_confidence*self.curr_poly +
-                          self.prev_confidence*self.prev_poly)/(current_confidence+self.prev_confidence)
+        # print("conf = ", type(current_confidence))
+        if(math.isnan(self.prev_confidence)):
+            raise ValueError("nan")
+        predicted_poly = current_confidence*self.curr_poly
+        print("prev conf", self.prev_confidence)
+        print("prev_poly", self.prev_poly)
+        predicted_poly += (self.prev_confidence*self.prev_poly)
+        predicted_poly /= (current_confidence+self.prev_confidence+0.0001)
         actual_confidence = self.find_confidence(predicted_poly)
         self.prev_confidence = actual_confidence*0.9
         self.prev_poly = predicted_poly
@@ -97,11 +104,13 @@ class Lanes:
         self.pub_poly = rospy.Publisher("/poly", abc_coeff, queue_size=10)
 
     def img_to_world(self, xy: np.ndarray):
-        if len(xy) > 0:
+        xy = np.array(xy)
+        if xy.size > 0:
             return xy/self.scale - np.array([self.x_offset, self.y_offset])
         return np.array([])
 
     def world_to_img(self, xy):
+        xy = np.array(xy)
         if len(xy) > 0:
             return (xy+np.array([self.x_offset, self.y_offset]))*self.scale
         return np.array([])
@@ -170,9 +179,9 @@ class Lanes:
                       self.mid_lane.prev_poly[2], self.right_lane.prev_poly[2]]
         '''prev_poly initialization values are not changing'''
         # final_3_lanes is a dictionary that will store clusters in each of the lanes
-        self.left_lane.points = []
-        self.mid_lane.points = []
-        self.right_lane.points = []
+        self.left_lane.points = [[0, 0]]
+        self.mid_lane.points = [[0, 0]]
+        self.right_lane.points = [[0, 0]]
         '''new_labels has points in it'''
         for i in new_labels.keys():
             # find the lane polynomial
@@ -188,6 +197,10 @@ class Lanes:
             # print(f"{lane_coeff[0]} {lane_coeff[1]} {lane_coeff[2]}")
             # print(f"{d1} {d2} {d3}")
 
+            print("----------------")
+            print(self.left_lane.points)
+            print(self.mid_lane.points)
+            print(self.right_lane.points)
             if(min(d1, d2, d3) == d1):
                 # appending the clusters to final_3_lanes
                 if self.left_lane.points is not None:
@@ -195,7 +208,6 @@ class Lanes:
                         (self.left_lane.points, new_labels[i]), axis=0)
                 else:
                     self.left_lane.points = new_labels[i]
-                print(self.left_lane.points)
             elif(min(d1, d2, d3) == d2):
                 if self.mid_lane.points is not None:
                     self.mid_lane.points = np.concatenate(
@@ -208,7 +220,6 @@ class Lanes:
                         (self.right_lane.points, new_labels[i]), axis=0)
                 else:
                     self.right_lane.points = new_labels[i]
-                print(new_labels[i])
 
     def poly_viz(self):
         coeff = [self.left_lane.curr_poly,
@@ -270,6 +281,8 @@ def image_callback(msg):
             indexes_points.append(tuple([index[0], index[1]]))
 
     indexes_points = np.array(indexes_points)
+    if(len(indexes_points.shape) == 1):
+        indexes_points.reshape(-1,1)
     # This is for the normal indices which we get at the correct time stamp
     db = DBSCAN(eps=7, min_samples=25, algorithm='auto').fit(
         indexes_points)  # clusters lane points
