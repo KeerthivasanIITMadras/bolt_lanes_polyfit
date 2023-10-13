@@ -3,7 +3,7 @@
 
 ### The algorithm works well when we get really good lane data , which can be observed from the following
 <video controls="" width="800" height="500" muted="" loop="" autoplay="">
-<source src="[https://github.com/YogangSingh/YogangSingh.github.io/raw/main/MultiUSV_Trim_MP4.mp4](https://github.com/KeerthivasanIITMadras/bolt_lanes_polyfit/assets/94305617/482b24df-9cb7-41b5-afd6-7b157788ce1d)https://github.com/KeerthivasanIITMadras/bolt_lanes_polyfit/assets/94305617/482b24df-9cb7-41b5-afd6-7b157788ce1d" type="video/mp4">
+<source src="[https://github.com/KeerthivasanIITMadras/bolt_lanes_polyfit/assets/94305617/482b24df-9cb7-41b5-afd6-7b157788ce1d]" type="video/mp4">
 </video>
 
 
