@@ -3,8 +3,5 @@
 
 ### The algorithm works well when we get really good lane data , which can be observed from the following
 
-
-
-
 https://github.com/KeerthivasanIITMadras/bolt_lanes_polyfit/assets/94305617/a6e2dcfb-4f84-44ae-b586-fcc5debdff87
 
